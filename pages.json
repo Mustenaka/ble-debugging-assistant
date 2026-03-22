@@ -1,0 +1,66 @@
+{
+  "pages": [
+    {
+      "path": "pages/scan/index",
+      "style": {
+        "navigationBarTitleText": "BLE 调试助手",
+        "navigationBarBackgroundColor": "#0A0F1C",
+        "navigationBarTextStyle": "white",
+        "backgroundColor": "#0A0F1C",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/device/index",
+      "style": {
+        "navigationBarTitleText": "设备服务",
+        "navigationBarBackgroundColor": "#0A0F1C",
+        "navigationBarTextStyle": "white",
+        "backgroundColor": "#0A0F1C",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/debug/index",
+      "style": {
+        "navigationBarTitleText": "BLE 通信调试",
+        "navigationBarBackgroundColor": "#0A0F1C",
+        "navigationBarTextStyle": "white",
+        "backgroundColor": "#0A0F1C",
+        "enablePullDownRefresh": false
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "BLE 调试助手",
+    "navigationBarBackgroundColor": "#0A0F1C",
+    "backgroundColor": "#0A0F1C"
+  },
+  "tabBar": {
+    "color": "#6B7280",
+    "selectedColor": "#00F5FF",
+    "backgroundColor": "#111827",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/scan/index",
+        "text": "扫描",
+        "iconPath": "static/tab_scan.png",
+        "selectedIconPath": "static/tab_scan_active.png"
+      },
+      {
+        "pagePath": "pages/device/index",
+        "text": "设备",
+        "iconPath": "static/tab_device.png",
+        "selectedIconPath": "static/tab_device_active.png"
+      },
+      {
+        "pagePath": "pages/debug/index",
+        "text": "调试",
+        "iconPath": "static/tab_debug.png",
+        "selectedIconPath": "static/tab_debug_active.png"
+      }
+    ]
+  }
+}

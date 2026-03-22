@@ -1,0 +1,105 @@
+// ── BLE 调试助手 - 设计系统变量 ──────────────────────────────────────────────
+
+// 背景层级
+$bg-base:        #0A0F1C;
+$bg-panel:       #111827;
+$bg-card:        #1A2235;
+$bg-elevated:    #1E2D44;
+$bg-input:       #0D1526;
+$bg-overlay:     rgba(10, 15, 28, 0.95);
+
+// 主色调 - 科技感
+$color-primary:  #00F5FF;   // 霓虹蓝
+$color-accent:   #39FF14;   // 荧光绿
+$color-warning:  #F59E0B;   // 琥珀
+$color-danger:   #FF3B3B;   // 危险红
+$color-info:     #60A5FA;   // 信息蓝
+$color-purple:   #8B5CF6;   // 紫色
+
+// uni-app 兼容变量
+$uni-color-primary:  #00F5FF;
+$uni-color-success:  #39FF14;
+$uni-color-warning:  #F59E0B;
+$uni-color-error:    #FF3B3B;
+
+// 文字色
+$text-primary:   #E2E8F0;
+$text-secondary: #94A3B8;
+$text-muted:     #475569;
+$text-mono:      #A8D8A8;
+
+$uni-text-color:             #E2E8F0;
+$uni-text-color-inverse:     #0A0F1C;
+$uni-text-color-grey:        #94A3B8;
+$uni-text-color-placeholder: #475569;
+$uni-text-color-disable:     #334155;
+
+// 背景（uni兼容）
+$uni-bg-color:      #111827;
+$uni-bg-color-grey: #1A2235;
+$uni-bg-color-hover: #1E2D44;
+$uni-bg-color-mask:  rgba(0, 0, 0, 0.7);
+
+// 边框
+$border-default:  rgba(0, 245, 255, 0.15);
+$border-active:   rgba(0, 245, 255, 0.5);
+$border-card:     rgba(255, 255, 255, 0.06);
+$uni-border-color: rgba(0, 245, 255, 0.15);
+
+// 圆角
+$radius-sm:   6px;
+$radius-md:   12px;
+$radius-lg:   16px;
+$radius-full: 9999px;
+
+$uni-border-radius-sm:     4px;
+$uni-border-radius-base:   8px;
+$uni-border-radius-lg:     12px;
+$uni-border-radius-circle: 50%;
+
+// 间距
+$space-xs: 4px;
+$space-sm: 8px;
+$space-md: 16px;
+$space-lg: 24px;
+$space-xl: 32px;
+
+$uni-spacing-row-sm:  8px;
+$uni-spacing-row-base: 16px;
+$uni-spacing-row-lg:  24px;
+$uni-spacing-col-sm:  6px;
+$uni-spacing-col-base: 12px;
+$uni-spacing-col-lg:  20px;
+
+// 字体
+$font-xs:   10px;
+$font-sm:   12px;
+$font-base: 14px;
+$font-md:   16px;
+$font-lg:   18px;
+$font-xl:   20px;
+$font-2xl:  24px;
+
+$uni-font-size-sm:   12px;
+$uni-font-size-base: 14px;
+$uni-font-size-lg:   16px;
+$uni-img-size-sm:    20px;
+$uni-img-size-base:  26px;
+$uni-img-size-lg:    40px;
+
+// 阴影
+$shadow-card:      0 4px 20px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 245, 255, 0.08);
+$shadow-glow:      0 0 16px rgba(0, 245, 255, 0.25);
+$shadow-glow-green: 0 0 16px rgba(57, 255, 20, 0.25);
+$shadow-danger:    0 0 16px rgba(255, 59, 59, 0.25);
+
+// 透明度
+$uni-opacity-disabled: 0.35;
+
+// 文章场景（兼容）
+$uni-color-title:       #E2E8F0;
+$uni-font-size-title:   20px;
+$uni-color-subtitle:    #94A3B8;
+$uni-font-size-subtitle: 16px;
+$uni-color-paragraph:   #CBD5E1;
+$uni-font-size-paragraph: 14px;
