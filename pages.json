@@ -29,6 +29,16 @@
         "backgroundColor": "#0A0F1C",
         "enablePullDownRefresh": false
       }
+    },
+    {
+      "path": "pages/protocol/index",
+      "style": {
+        "navigationBarTitleText": "协议插件",
+        "navigationBarBackgroundColor": "#0A0F1C",
+        "navigationBarTextStyle": "white",
+        "backgroundColor": "#0A0F1C",
+        "enablePullDownRefresh": false
+      }
     }
   ],
   "globalStyle": {

@@ -40,6 +40,41 @@
       </view>
     </view>
 
+    <!-- MTU 协商 -->
+    <view v-if="bleStore.isConnected" class="mtu-card">
+      <text class="mtu-label">{{ t('device.mtu') }}</text>
+      <view class="mtu-row">
+        <input
+          class="mtu-input"
+          v-model="mtuInput"
+          type="number"
+          :placeholder="t('device.mtuInputPlaceholder')"
+          placeholder-class="mtu-ph"
+        />
+        <view
+          class="mtu-btn"
+          :class="{ 'mtu-btn--loading': isMtuNegotiating }"
+          @click="handleMtuNegotiate"
+        >
+          <view v-if="isMtuNegotiating" class="mini-spin" />
+          <text v-else class="mtu-btn-text">{{ t('device.mtuNegotiate') }}</text>
+        </view>
+        <view class="mtu-current">
+          <text class="mtu-current-label">MTU</text>
+          <text class="mtu-current-val">{{ bleStore.currentMtu }}</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- RSSI 信号图表 -->
+    <view v-if="bleStore.rssiHistory.length >= 2" class="rssi-card">
+      <RssiChart
+        :history="bleStore.rssiHistory"
+        :title="t('device.rssiChart')"
+        waiting-text="..."
+      />
+    </view>
+
     <!-- 加载中 -->
     <view v-if="isLoadingServices" class="loading-card">
       <view class="loading-inner">
@@ -149,6 +184,8 @@ import { useI18n } from '../../composables/useI18n'
 import type { BleCharacteristic } from '../../services/bleManager'
 import { shortUUID } from '../../utils/hex'
 import SettingsPanel from '../../components/SettingsPanel.vue'
+import RssiChart from '../../components/RssiChart.vue'
+import { bleManager } from '../../services/bleManager'
 
 const bleStore = useBleStore()
 const appStore = useAppStore()
@@ -157,6 +194,8 @@ const { t } = useI18n()
 const isLoadingServices = ref(false)
 const showSettings = ref(false)
 const activeService = ref('')
+const mtuInput = ref('')
+const isMtuNegotiating = ref(false)
 
 interface ServiceNode {
   uuid: string; isPrimary: boolean
@@ -215,6 +254,24 @@ function isSelectedChar(serviceId: string, charId: string) {
   return bleStore.activeServiceId === serviceId && bleStore.activeCharacteristicId === charId
 }
 
+async function handleMtuNegotiate() {
+  const mtu = parseInt(mtuInput.value)
+  if (isNaN(mtu) || mtu < 23 || mtu > 512) {
+    uni.showToast({ title: t('device.mtuInputPlaceholder'), icon: 'none' })
+    return
+  }
+  isMtuNegotiating.value = true
+  try {
+    const actual = await bleManager.negotiateMTU(mtu)
+    bleStore.currentMtu = actual
+    uni.showToast({ title: `${t('device.mtuSuccess')} ${actual}`, icon: 'none', duration: 2000 })
+  } catch (e: any) {
+    uni.showToast({ title: e.message ?? t('device.mtuFailed'), icon: 'none' })
+  } finally {
+    isMtuNegotiating.value = false
+  }
+}
+
 function goToDebug() { uni.navigateTo({ url: '/pages/debug/index' }) }
 
 function handleDisconnect() {
@@ -265,6 +322,99 @@ function handleDisconnect() {
 .quick-row { display: flex; gap: 5px; }
 .icon-btn { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 7px; &:active { opacity: 0.7; } }
 .ib-icon { font-size: 13px; color: var(--text-muted); }
+
+/* ── MTU 协商 ── */
+.mtu-card {
+  background: var(--bg-panel);
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mtu-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mtu-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mtu-input {
+  flex: 1;
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  color: var(--text-primary);
+  font-family: 'Courier New', monospace;
+}
+
+.mtu-ph { color: var(--text-dimmed); }
+
+.mtu-btn {
+  height: 36px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--color-primary-rgb), 0.1);
+  border: 1px solid rgba(var(--color-primary-rgb), 0.3);
+  border-radius: 8px;
+  flex-shrink: 0;
+  min-width: 60px;
+  &:active { opacity: 0.75; }
+  &--loading { opacity: 0.6; }
+}
+
+.mtu-btn-text { font-size: 13px; color: var(--color-primary); font-weight: 600; }
+
+.mini-spin {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(var(--color-primary-rgb), 0.3);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: ble-spin 0.8s linear infinite;
+}
+
+.mtu-current {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 40px;
+}
+
+.mtu-current-label {
+  font-size: 9px;
+  color: var(--text-dimmed);
+  text-transform: uppercase;
+}
+
+.mtu-current-val {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-primary);
+  font-family: 'Courier New', monospace;
+}
+
+/* ── RSSI 图表卡片 ── */
+.rssi-card {
+  background: var(--bg-panel);
+  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  padding: 12px 16px;
+}
 
 /* ── 加载 ── */
 .loading-card { background: var(--bg-panel); border-radius: 12px; border: 1px solid var(--border-subtle); padding: 32px; }

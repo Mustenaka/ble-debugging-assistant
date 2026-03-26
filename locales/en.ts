@@ -32,6 +32,9 @@ export const en: I18nKeys = {
     version: 'Version',
     about: 'About',
     aboutContent: 'Professional BLE Debugger for hardware engineers',
+    exportFormat: 'Export Format',
+    exportTxt: 'Text (TXT)',
+    exportCsv: 'Spreadsheet (CSV)',
   },
 
   nav: {
@@ -104,6 +107,12 @@ export const en: I18nKeys = {
       notify: 'NOTIFY',
       indicate: 'INDICATE',
     },
+    mtu: 'MTU Negotiation',
+    mtuInputPlaceholder: '23 ~ 512',
+    mtuNegotiate: 'Negotiate',
+    mtuSuccess: 'Negotiated to',
+    mtuFailed: 'Negotiation failed',
+    rssiChart: 'RSSI Signal History',
   },
 
   debug: {
@@ -147,10 +156,13 @@ export const en: I18nKeys = {
     service: 'Service',
     characteristic: 'Char',
     bytes: 'bytes',
+    charHistory: 'Char Value History',
+    noHistory: 'No history yet',
     moreMenu: {
       read: 'Read Characteristic',
       export: 'Export Log',
       clearLog: 'Clear Log',
+      charHistory: 'Char Value History',
       disconnect: 'Disconnect',
     },
   },
@@ -178,5 +190,26 @@ export const en: I18nKeys = {
     send: 'SEND',
     paste: 'Paste',
     clear: 'Clear',
+  },
+
+  protocol: {
+    pageTitle: 'Protocol Plugins',
+    manage: 'Manage Plugins',
+    addPlugin: 'Add Plugin',
+    editPlugin: 'Edit Plugin',
+    pluginName: 'Plugin Name',
+    pluginCode: 'Parser Function Body (JS)',
+    codeTip: 'Args: hexStr, asciiStr | Return: { fields: [{name, value}] }',
+    codePlaceholder: 'const b = hexStr.split(" ").map(h=>parseInt(h,16));\nreturn { fields: [{ name: "Length", value: b.length+" bytes" }] };',
+    noPlugins: 'No plugins yet. Tap + to add one.',
+    enable: 'Enable',
+    disable: 'Disable',
+    delete: 'Delete',
+    save: 'Save',
+    namePlaceholder: 'Plugin name, e.g. Custom Frame',
+    deleteConfirm: 'Delete this plugin?',
+    noEnabled: 'No plugin enabled. Tap "Manage Plugins" to configure.',
+    parseError: 'Parse error',
+    running: 'Running',
   },
 }

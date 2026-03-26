@@ -30,6 +30,9 @@ export const zh = {
     version: '版本',
     about: '关于',
     aboutContent: '专业 BLE 调试助手，面向硬件工程师',
+    exportFormat: '导出格式',
+    exportTxt: '文本 (TXT)',
+    exportCsv: '表格 (CSV)',
   },
 
   nav: {
@@ -102,6 +105,12 @@ export const zh = {
       notify: 'NOTIFY',
       indicate: 'INDICATE',
     },
+    mtu: 'MTU 协商',
+    mtuInputPlaceholder: '23 ~ 512',
+    mtuNegotiate: '协商',
+    mtuSuccess: '已协商为',
+    mtuFailed: '协商失败',
+    rssiChart: 'RSSI 信号历史',
   },
 
   debug: {
@@ -145,10 +154,13 @@ export const zh = {
     service: 'Service',
     characteristic: 'Char',
     bytes: 'bytes',
+    charHistory: '特征值历史',
+    noHistory: '暂无历史数据',
     moreMenu: {
       read: '读取特征值',
       export: '导出日志',
       clearLog: '清空日志',
+      charHistory: '特征值历史',
       disconnect: '断开连接',
     },
   },
@@ -176,6 +188,28 @@ export const zh = {
     send: '发 送',
     paste: '粘贴',
     clear: '清空',
+  },
+}
+
+  protocol: {
+    pageTitle: '协议插件',
+    manage: '管理插件',
+    addPlugin: '添加插件',
+    editPlugin: '编辑插件',
+    pluginName: '插件名称',
+    pluginCode: '解析函数体 (JS)',
+    codeTip: '参数: hexStr, asciiStr | 返回: { fields: [{name, value}] }',
+    codePlaceholder: 'const b = hexStr.split(" ").map(h=>parseInt(h,16));\nreturn { fields: [{ name: "长度", value: b.length+" bytes" }] };',
+    noPlugins: '暂无自定义插件，点击 + 添加',
+    enable: '启用',
+    disable: '禁用',
+    delete: '删除',
+    save: '保存',
+    namePlaceholder: '插件名称，如：自定义帧格式',
+    deleteConfirm: '确认删除此插件？',
+    noEnabled: '未启用插件，点击「管理插件」配置',
+    parseError: '解析异常',
+    running: '运行中',
   },
 }
 

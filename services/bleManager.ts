@@ -421,6 +421,38 @@ class BleManager {
     })
   }
 
+  // ── 查询设备 RSSI ─────────────────────────────────────────────────────────
+
+  async getRSSI(deviceId: string): Promise<number> {
+    return new Promise((resolve, reject) => {
+      uni.getBLEDeviceRSSI({
+        deviceId,
+        success: (res: any) => resolve(res.RSSI),
+        fail: (err: any) => reject(createBleError(err.errCode ?? err.code ?? 10008, err)),
+      })
+    })
+  }
+
+  // ── MTU 协商 ──────────────────────────────────────────────────────────────
+
+  async negotiateMTU(mtu: number): Promise<number> {
+    const deviceId = this.connectedDeviceId
+    if (!deviceId) throw createBleError(10006)
+    return new Promise((resolve, reject) => {
+      // #ifdef APP-PLUS
+      uni.setBLEMTU({
+        deviceId,
+        mtu,
+        success: (res: any) => resolve((res as any).mtu ?? mtu),
+        fail: (err: any) => reject(createBleError(err.errCode ?? err.code ?? 10007, err)),
+      })
+      // #endif
+      // #ifndef APP-PLUS
+      resolve(mtu)
+      // #endif
+    })
+  }
+
   // ── 分包写入（MTU 分片）────────────────────────────────────────────────────
 
   async writeChunked(

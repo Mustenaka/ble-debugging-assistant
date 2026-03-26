@@ -49,6 +49,16 @@ export const useBleStore = defineStore('ble', () => {
   const txBytes = ref<number>(0)
   const rxBytes = ref<number>(0)
 
+  // RSSI 历史（已连接设备）
+  const rssiHistory = ref<{ time: number; rssi: number }[]>([])
+  let rssiPollTimer: ReturnType<typeof setInterval> | null = null
+
+  // 特征值历史数据
+  const charValueHistory = ref<Record<string, { time: number; hex: string }[]>>({})
+
+  // 当前协商 MTU
+  const currentMtu = ref<number>(23)
+
   // ── 计算属性 ─────────────────────────────────────────────────────────────
 
   const isScanning = computed(() => bleState.value === BleState.SCANNING)
@@ -88,17 +98,19 @@ export const useBleStore = defineStore('ble', () => {
 
     bleManager.onDataReceived((deviceId, serviceId, characteristicId, value) => {
       rxBytes.value += value.byteLength
+      const hex = bufToHex(value)
       const entry: LogEntry = {
         id: `log_${Date.now()}_${Math.random().toString(36).slice(2)}`,
         timestamp: Date.now(),
         direction: 'RX',
-        hex: bufToHex(value),
+        hex,
         ascii: bufToAscii(value),
         rawLength: value.byteLength,
         label: `${shortUUID(serviceId)} / ${shortUUID(characteristicId)}`,
       }
       logBuffer.push(entry)
       logs.value = logBuffer.getAll()
+      addCharHistory(characteristicId, hex)
     })
 
     bleManager.onConnectionChange((deviceId, connected) => {
@@ -140,6 +152,7 @@ export const useBleStore = defineStore('ble', () => {
       recentDevices.value = loadRecentDevices()
       addSysLog(`已连接: ${device.name} (${device.deviceId})`)
       await loadDeviceServices(device.deviceId)
+      startRssiPoll()
     } catch (e: any) {
       errorMessage.value = e.message ?? '连接失败'
       throw e
@@ -151,12 +164,14 @@ export const useBleStore = defineStore('ble', () => {
   async function disconnectDevice() {
     if (!connectedDevice.value) return
     const name = connectedDevice.value.name
+    stopRssiPoll()
     await bleManager.disconnect()
     services.value = []
     characteristics.value = new Map()
     activeServiceId.value = ''
     activeCharacteristicId.value = ''
     connectedDevice.value = null
+    currentMtu.value = 23
     addSysLog(`已断开: ${name}`)
   }
 
@@ -259,9 +274,45 @@ export const useBleStore = defineStore('ble', () => {
     saveQuickCommands(quickCommands.value)
   }
 
+  // ── RSSI 轮询 ─────────────────────────────────────────────────────────────
+
+  function startRssiPoll() {
+    stopRssiPoll()
+    rssiHistory.value = []
+    rssiPollTimer = setInterval(async () => {
+      if (!connectedDevice.value) return
+      try {
+        const rssi = await bleManager.getRSSI(connectedDevice.value.deviceId)
+        rssiHistory.value.push({ time: Date.now(), rssi })
+        if (rssiHistory.value.length > 60) rssiHistory.value.splice(0, 1)
+        connectedDevice.value = { ...connectedDevice.value, RSSI: rssi }
+      } catch {
+        // RSSI 获取失败静默处理
+      }
+    }, 2000)
+  }
+
+  function stopRssiPoll() {
+    if (rssiPollTimer) {
+      clearInterval(rssiPollTimer)
+      rssiPollTimer = null
+    }
+    rssiHistory.value = []
+  }
+
+  // ── 特征值历史 ────────────────────────────────────────────────────────────
+
+  function addCharHistory(charId: string, hex: string) {
+    if (!charId || !hex) return
+    const arr = [...(charValueHistory.value[charId] ?? []), { time: Date.now(), hex }]
+    if (arr.length > 50) arr.splice(0, arr.length - 50)
+    charValueHistory.value = { ...charValueHistory.value, [charId]: arr }
+  }
+
   // ── 重置 ──────────────────────────────────────────────────────────────────
 
   function reset() {
+    stopRssiPoll()
     scannedDevices.value = []
     connectedDevice.value = null
     services.value = []
@@ -271,6 +322,8 @@ export const useBleStore = defineStore('ble', () => {
     notifyEnabled.value = false
     isConnecting.value = false
     errorMessage.value = ''
+    currentMtu.value = 23
+    charValueHistory.value = {}
     clearLogs()
   }
 
@@ -295,6 +348,9 @@ export const useBleStore = defineStore('ble', () => {
     errorMessage,
     txBytes,
     rxBytes,
+    rssiHistory,
+    charValueHistory,
+    currentMtu,
     // computed
     isScanning,
     isConnected,
@@ -314,6 +370,7 @@ export const useBleStore = defineStore('ble', () => {
     toggleNotify,
     sendData,
     addSysLog,
+    addCharHistory,
     clearLogs,
     addQuickCommand,
     removeQuickCommand,

@@ -36,6 +36,8 @@
       <view class="more-menu" @click.stop>
         <view class="menu-item" @click="handleReadChar"><text class="mi-icon">⬇</text><text class="mi-text">{{ t('debug.moreMenu.read') }}</text></view>
         <view class="menu-divider" />
+        <view class="menu-item" @click="handleCharHistory"><text class="mi-icon">◈</text><text class="mi-text">{{ t('debug.moreMenu.charHistory') }}</text></view>
+        <view class="menu-divider" />
         <view class="menu-item" @click="handleExportLog"><text class="mi-icon">⬆</text><text class="mi-text">{{ t('debug.moreMenu.export') }}</text></view>
         <view class="menu-divider" />
         <view class="menu-item" @click="handleClearLog"><text class="mi-icon danger">✕</text><text class="mi-text danger">{{ t('debug.moreMenu.clearLog') }}</text></view>
@@ -129,6 +131,19 @@
                 <text class="proto-name">{{ p.label }}</text>
               </view>
             </view>
+
+            <!-- 自定义 tab：插件管理入口 -->
+            <view v-if="activeProtocol === 'custom'" class="custom-plugin-bar">
+              <view v-if="protocolStore.enabledPlugin" class="plugin-indicator">
+                <view class="plugin-dot" />
+                <text class="plugin-running-name">{{ protocolStore.enabledPlugin.name }}</text>
+              </view>
+              <text v-else class="no-plugin-hint">{{ t('protocol.noEnabled') }}</text>
+              <view class="manage-link" @click="goToProtocolManage">
+                <text class="manage-text">{{ t('protocol.manage') }} ›</text>
+              </view>
+            </view>
+
             <view v-if="parsedProtocol" class="parsed-result">
               <view v-for="(field, i) in parsedProtocol" :key="i" class="parsed-field">
                 <text class="field-name">{{ field.name }}</text>
@@ -157,6 +172,17 @@
       </view>
     </view>
 
+    <!-- 特征值历史 Diff 弹窗 -->
+    <DiffModal
+      v-if="showDiffModal"
+      :history="bleStore.charValueHistory[bleStore.activeCharacteristicId] ?? []"
+      :title="t('debug.charHistory')"
+      :empty-text="t('debug.noHistory')"
+      :changed-label="t('debug.charHistory')"
+      same-label="—"
+      @close="showDiffModal = false"
+    />
+
     <!-- 设置面板 -->
     <SettingsPanel :visible="showSettings" @close="showSettings = false" />
 
@@ -169,19 +195,23 @@ import { useBleStore } from '../../store/bleStore'
 import { useAppStore } from '../../store/appStore'
 import { useI18n } from '../../composables/useI18n'
 import { shortUUID } from '../../utils/hex'
-import { exportLogsToText, saveLogsToFile } from '../../utils/buffer'
+import { exportLogsToText, exportLogsToCSV, saveLogsToFile } from '../../utils/buffer'
+import { useProtocolStore } from '../../store/protocolStore'
 import BleLogPanel from '../../components/BleLogPanel.vue'
 import HexInput from '../../components/HexInput.vue'
 import SettingsPanel from '../../components/SettingsPanel.vue'
+import DiffModal from '../../components/DiffModal.vue'
 
 const bleStore = useBleStore()
 const appStore = useAppStore()
+const protocolStore = useProtocolStore()
 const { t } = useI18n()
 
 const isSending = ref(false)
 const showMoreMenu = ref(false)
 const showProtocol = ref(false)
 const showSettings = ref(false)
+const showDiffModal = ref(false)
 const activeProtocol = ref('raw')
 const logDisplayMode = ref<'hex' | 'ascii' | 'both'>('hex')
 const isWideScreen = ref(false)
@@ -232,6 +262,10 @@ const parsedProtocol = computed(() => {
       { name: t('debug.proto.lastByte'),   value: `0x${bytes[bytes.length-1].toString(16).toUpperCase().padStart(2,'0')}` },
     ]
   }
+  if (activeProtocol.value === 'custom') {
+    if (!protocolStore.enabledPlugin) return null
+    return protocolStore.runPlugin(protocolStore.enabledPlugin, lastRx.hex, lastRx.ascii)
+  }
   return null
 })
 
@@ -265,17 +299,42 @@ async function handleReadChar() {
 async function handleExportLog() {
   showMoreMenu.value = false
   if (!bleStore.logs.length) { uni.showToast({ title: t('debug.noLogs'), icon: 'none' }); return }
-  try {
-    const text = exportLogsToText(bleStore.logs, bleStore.connectedDevice?.name)
-    const path = await saveLogsToFile(text)
-    uni.showModal({ title: t('debug.exportTitle'), content: t('debug.exportSaved') + path, showCancel: false })
-  } catch { uni.showToast({ title: t('debug.exportFailed'), icon: 'none' }) }
+  uni.showActionSheet({
+    itemList: [t('settings.exportTxt'), t('settings.exportCsv')],
+    success: async (res) => {
+      try {
+        let content: string
+        let filename: string
+        let mimeType: string
+        if (res.tapIndex === 1) {
+          content = exportLogsToCSV(bleStore.logs, bleStore.connectedDevice?.name)
+          filename = `ble_log_${Date.now()}.csv`
+          mimeType = 'text/csv'
+        } else {
+          content = exportLogsToText(bleStore.logs, bleStore.connectedDevice?.name)
+          filename = `ble_log_${Date.now()}.txt`
+          mimeType = 'text/plain'
+        }
+        const path = await saveLogsToFile(content, filename, mimeType)
+        uni.showModal({ title: t('debug.exportTitle'), content: t('debug.exportSaved') + path, showCancel: false })
+      } catch { uni.showToast({ title: t('debug.exportFailed'), icon: 'none' }) }
+    },
+  })
 }
 
 function handleClearLog() {
   showMoreMenu.value = false
   uni.showModal({ title: t('debug.clearLogTitle'), content: t('debug.clearLogConfirm'), confirmColor: '#DC2626',
     success: (res) => { if (res.confirm) bleStore.clearLogs() } })
+}
+
+function handleCharHistory() {
+  showMoreMenu.value = false
+  showDiffModal.value = true
+}
+
+function goToProtocolManage() {
+  uni.navigateTo({ url: '/pages/protocol/index' })
 }
 
 async function handleDisconnect() {
@@ -387,6 +446,62 @@ function goToDevice() { uni.navigateTo({ url: '/pages/device/index' }) }
 .protocol-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
 .proto-tab { padding: 4px 12px; border-radius: 6px; background: var(--bg-input); border: 1px solid var(--border-subtle); &--active { background: rgba(var(--color-primary-rgb), 0.1); border-color: rgba(var(--color-primary-rgb), 0.3); .proto-name { color: var(--color-primary); } } }
 .proto-name { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+/* ── 自定义插件栏 ── */
+.custom-plugin-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: rgba(var(--color-primary-rgb), 0.04);
+  border: 1px solid rgba(var(--color-primary-rgb), 0.12);
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.plugin-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.plugin-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 5px rgba(var(--color-accent-rgb), 0.7);
+  animation: ble-pulse 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.plugin-running-name {
+  font-size: 11px;
+  color: var(--color-accent);
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.no-plugin-hint {
+  font-size: 11px;
+  color: var(--text-dimmed);
+  flex: 1;
+}
+
+.manage-link {
+  flex-shrink: 0;
+  &:active { opacity: 0.7; }
+}
+
+.manage-text {
+  font-size: 11px;
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
 .parsed-result { display: flex; flex-direction: column; gap: 6px; }
 .parsed-field { display: flex; gap: 10px; padding: 6px 8px; background: var(--bg-input); border-radius: 6px; }
 .field-name { font-size: 11px; color: var(--text-muted); min-width: 64px; flex-shrink: 0; }

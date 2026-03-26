@@ -53,6 +53,21 @@ export function logEntryToText(entry: LogEntry): string {
   return `[${ts}] ${dir}${label} HEX: ${entry.hex}  ASCII: ${entry.ascii}`
 }
 
+/** 日志列表导出为 CSV */
+export function exportLogsToCSV(logs: LogEntry[], deviceName = 'Unknown'): string {
+  const esc = (s: string) => `"${s.replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`
+  const header = ['Time', 'Direction', 'HEX', 'ASCII', 'Bytes', 'Label'].join(',')
+  const rows = logs.map((e) => [
+    formatTimestamp(e.timestamp, true),
+    e.direction,
+    esc(e.hex),
+    esc(e.ascii),
+    String(e.rawLength),
+    esc(e.label ?? ''),
+  ].join(','))
+  return [header, ...rows].join('\n')
+}
+
 /** 日志列表导出为文本 */
 export function exportLogsToText(logs: LogEntry[], deviceName = 'Unknown'): string {
   const header = [
@@ -66,7 +81,7 @@ export function exportLogsToText(logs: LogEntry[], deviceName = 'Unknown'): stri
 }
 
 /** 保存日志到本地文件 */
-export async function saveLogsToFile(content: string, filename?: string): Promise<string> {
+export async function saveLogsToFile(content: string, filename?: string, mimeType = 'text/plain'): Promise<string> {
   const name = filename ?? `ble_log_${Date.now()}.txt`
 
   return new Promise((resolve, reject) => {
@@ -84,7 +99,7 @@ export async function saveLogsToFile(content: string, filename?: string): Promis
 
     // #ifndef APP-PLUS
     // H5 fallback
-    const blob = new Blob([content], { type: 'text/plain' })
+    const blob = new Blob([content], { type: mimeType })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
