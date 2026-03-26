@@ -189,3 +189,46 @@ export function saveRecentDevice(device: RecentDevice): void {
   // 最多保存 10 条
   uni.setStorageSync('ble_recent_devices', JSON.stringify(list.slice(0, 10)))
 }
+
+// ─── 设备 PIN 配置 ────────────────────────────────────────────────────────────
+
+/** 设备 PIN 码配置（按 deviceId 存储） */
+export interface DevicePinConfig {
+  deviceId: string
+  pin: string
+  /** 'ascii' = 直接作为字符串写入；'hex' = 解析为字节序列写入 */
+  mode: 'ascii' | 'hex'
+  /** 是否在连接成功后自动写入 PIN */
+  autoSend: boolean
+  /** 自动发送目标特征值 UUID（为空则仅提示手动发送） */
+  charUUID: string
+  /** 自动发送目标服务 UUID */
+  serviceUUID: string
+}
+
+const PIN_STORAGE_KEY = 'ble_device_pins'
+
+export function loadDevicePins(): Record<string, DevicePinConfig> {
+  try {
+    const raw = uni.getStorageSync(PIN_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+
+export function saveDevicePin(config: DevicePinConfig): void {
+  const all = loadDevicePins()
+  all[config.deviceId] = config
+  uni.setStorageSync(PIN_STORAGE_KEY, JSON.stringify(all))
+}
+
+export function removeDevicePin(deviceId: string): void {
+  const all = loadDevicePins()
+  delete all[deviceId]
+  uni.setStorageSync(PIN_STORAGE_KEY, JSON.stringify(all))
+}
+
+export function getDevicePin(deviceId: string): DevicePinConfig | null {
+  return loadDevicePins()[deviceId] ?? null
+}

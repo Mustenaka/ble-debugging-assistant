@@ -133,7 +133,9 @@
             :is-connecting="connectingId === device.deviceId"
             :connectable-label="t('scan.connectable')"
             :unknown-label="t('scan.unknownDevice')"
+            :has-pin-config="!!devicePins[device.deviceId]"
             @connect="connectDevice"
+            @config-pin="openPinModal"
           />
         </view>
       </scroll-view>
@@ -151,18 +153,34 @@
     <!-- 设置面板 -->
     <SettingsPanel :visible="showSettings" @close="showSettings = false" />
 
+    <!-- PIN 输入弹窗 -->
+    <PinInputModal
+      :visible="showPinModal"
+      :device-id="pinTargetDevice?.deviceId ?? ''"
+      :device-name="pinTargetDevice?.name ?? ''"
+      :initial-config="pinTargetDevice ? devicePins[pinTargetDevice.deviceId] ?? null : null"
+      @confirm="onPinConfirm"
+      @clear="onPinClear"
+      @cancel="showPinModal = false"
+    />
+
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useBleStore } from '../../store/bleStore'
 import { useAppStore } from '../../store/appStore'
 import { useI18n } from '../../composables/useI18n'
-import { BleState, type BleDevice } from '../../services/bleManager'
+import { bleManager, BleState, type BleDevice } from '../../services/bleManager'
+import {
+  saveDevicePin, removeDevicePin, loadDevicePins,
+  type DevicePinConfig,
+} from '../../utils/buffer'
 import DeviceItem from '../../components/DeviceItem.vue'
 import RadarScanAnimation from '../../components/RadarScanAnimation.vue'
 import SettingsPanel from '../../components/SettingsPanel.vue'
+import PinInputModal from '../../components/PinInputModal.vue'
 
 const bleStore = useBleStore()
 const appStore = useAppStore()
@@ -172,6 +190,58 @@ const connectingId = ref<string | null>(null)
 const showSettings = ref(false)
 const rssiOptions = ['-100', '-90', '-80', '-70', '-60']
 const rssiPickerIndex = ref(0)
+
+// ── PIN 码相关 ──────────────────────────────────────────────────────────────
+const devicePins = reactive<Record<string, DevicePinConfig>>(loadDevicePins())
+const showPinModal = ref(false)
+const pinTargetDevice = ref<BleDevice | null>(null)
+
+function openPinModal(device: BleDevice) {
+  pinTargetDevice.value = device
+  showPinModal.value = true
+}
+
+function onPinConfirm(config: DevicePinConfig, remember: boolean) {
+  if (remember) {
+    saveDevicePin(config)
+    devicePins[config.deviceId] = config
+  }
+  showPinModal.value = false
+  // 保存完 PIN 配置后立即连接
+  if (pinTargetDevice.value) {
+    connectDevice(pinTargetDevice.value)
+  }
+}
+
+function onPinClear() {
+  if (pinTargetDevice.value) {
+    removeDevicePin(pinTargetDevice.value.deviceId)
+    delete devicePins[pinTargetDevice.value.deviceId]
+  }
+  showPinModal.value = false
+}
+
+/**
+ * 连接后自动发送 PIN 到指定特征值
+ */
+async function autoSendPin(config: DevicePinConfig, deviceId: string) {
+  if (!config.autoSend || !config.charUUID || !config.serviceUUID) return
+  try {
+    let buf: ArrayBuffer
+    if (config.mode === 'hex') {
+      const hex = config.pin.replace(/\s+/g, '')
+      const bytes = new Uint8Array(hex.match(/.{1,2}/g)!.map((h) => parseInt(h, 16)))
+      buf = bytes.buffer
+    } else {
+      const encoder = new TextEncoder()
+      buf = encoder.encode(config.pin).buffer
+    }
+    await bleManager.write(deviceId, config.serviceUUID, config.charUUID, buf)
+    uni.showToast({ title: t('pin.pinSent'), icon: 'success', duration: 1500 })
+  } catch {
+    uni.showToast({ title: t('pin.pinSendFailed'), icon: 'none', duration: 2000 })
+  }
+}
 
 onMounted(() => {
   bleStore.init()
@@ -240,10 +310,33 @@ async function connectDevice(device: BleDevice) {
     await bleStore.connectDevice(device)
     uni.hideLoading()
     uni.showToast({ title: t('scan.connectSuccess'), icon: 'success', duration: 1500 })
+
+    // 连接成功后：若有 PIN 配置则处理自动发送
+    const pinConfig = devicePins[device.deviceId]
+    if (pinConfig) {
+      if (pinConfig.autoSend && pinConfig.charUUID && pinConfig.serviceUUID) {
+        await autoSendPin(pinConfig, device.deviceId)
+      } else {
+        uni.showToast({ title: t('pin.manualSendHint'), icon: 'none', duration: 2500 })
+      }
+    }
+
     uni.navigateTo({ url: '/pages/device/index' })
   } catch (e: any) {
     uni.hideLoading()
-    uni.showToast({ title: e.message ?? t('scan.connectFailed'), icon: 'none', duration: 2000 })
+    const errMsg = e.message ?? t('scan.connectFailed')
+    // 连接失败时提示是否用 PIN 重试
+    uni.showModal({
+      title: t('scan.connectFailed'),
+      content: errMsg,
+      confirmText: t('pin.retryWithPin'),
+      cancelText: t('common.cancel'),
+      success: (res) => {
+        if (res.confirm) {
+          openPinModal(device)
+        }
+      },
+    })
   } finally {
     connectingId.value = null
   }
@@ -252,9 +345,16 @@ async function connectDevice(device: BleDevice) {
 async function quickReconnect(recent: { deviceId: string; name: string }) {
   uni.showLoading({ title: t('scan.reconnecting'), mask: true })
   try {
-    await bleStore.connectDevice({ deviceId: recent.deviceId, name: recent.name, RSSI: -999 })
+    const device: BleDevice = { deviceId: recent.deviceId, name: recent.name, RSSI: -999 }
+    await bleStore.connectDevice(device)
     uni.hideLoading()
     uni.showToast({ title: t('scan.reconnectSuccess'), icon: 'success' })
+
+    const pinConfig = devicePins[recent.deviceId]
+    if (pinConfig?.autoSend && pinConfig.charUUID && pinConfig.serviceUUID) {
+      await autoSendPin(pinConfig, recent.deviceId)
+    }
+
     uni.navigateTo({ url: '/pages/device/index' })
   } catch (e: any) {
     uni.hideLoading()

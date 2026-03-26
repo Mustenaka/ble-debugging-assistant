@@ -191,6 +191,31 @@ export const zh = {
   },
 }
 
+  pin: {
+    title: 'PIN 码配置',
+    pinLabel: 'PIN 码',
+    pinPlaceholder: '输入 PIN 码',
+    modeLabel: '格式',
+    modeAscii: 'ASCII 字符串',
+    modeHex: 'HEX 字节',
+    autoSend: '连接后自动发送',
+    charUUIDLabel: '目标特征值 UUID',
+    charUUIDPlaceholder: '留空则手动发送（如：0000FFF1-...）',
+    serviceUUIDLabel: '目标服务 UUID',
+    serviceUUIDPlaceholder: '留空则手动发送',
+    save: '保存并连接',
+    cancel: '取消',
+    clear: '清除 PIN',
+    connectWithPin: '使用 PIN 连接',
+    retryWithPin: '输入 PIN 重试',
+    pinSent: 'PIN 已发送',
+    pinSendFailed: 'PIN 发送失败',
+    pinRequired: '请输入 PIN 码',
+    autoSendHint: '连接成功后将自动向指定特征值写入 PIN',
+    manualSendHint: '连接成功后请在调试页手动发送 PIN',
+    rememberPin: '记住此设备的 PIN',
+  },
+
   protocol: {
     pageTitle: '协议插件',
     manage: '管理插件',

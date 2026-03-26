@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(node -e \":*)",
-      "Bash(ls -lh \"D:/Work/Code/Cross/uniapp-ble-debugging-assistant/uniapp-ble-debugging-assistant/README\"*)"
+      "Bash(ls -lh \"D:/Work/Code/Cross/uniapp-ble-debugging-assistant/uniapp-ble-debugging-assistant/README\"*)",
+      "Bash(grep -r \"showModal\\\\|showInput\\\\|createBLEConnection\" /d/Work/Code/Cross/uniapp-ble-debugging-assistant/uniapp-ble-debugging-assistant --include=*.vue --include=*.ts --include=*.js)",
+      "Bash(grep -r \"pin\\\\|pairing\\\\|passkey\\\\|bond\" /d/Work/Code/Cross/uniapp-ble-debugging-assistant/uniapp-ble-debugging-assistant --include=*.vue --include=*.ts --include=*.js)"
     ]
   }
 }

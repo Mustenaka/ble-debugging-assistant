@@ -21,6 +21,9 @@
         <view v-if="device.connectable !== false" class="connectable-badge">
           <text class="connectable-text">{{ connectableLabel }}</text>
         </view>
+        <view v-if="hasPinConfig" class="pin-badge">
+          <text class="pin-badge-text">🔑</text>
+        </view>
       </view>
       <text class="device-id mono">{{ device.deviceId }}</text>
       <view v-if="device.advertisServiceUUIDs?.length" class="service-uuids">
@@ -35,6 +38,10 @@
 
     <!-- 右：操作 -->
     <view class="device-action">
+      <!-- PIN 配置按钮 -->
+      <view class="pin-btn" @click.stop="$emit('configPin', device)">
+        <text class="pin-btn-icon">🔑</text>
+      </view>
       <view v-if="isConnecting" class="connecting-spin">
         <view class="spin-ring" />
       </view>
@@ -58,9 +65,13 @@ const props = defineProps<{
   isConnecting?: boolean
   connectableLabel?: string
   unknownLabel?: string
+  hasPinConfig?: boolean
 }>()
 
-defineEmits<{ connect: [device: BleDevice] }>()
+defineEmits<{
+  connect: [device: BleDevice]
+  configPin: [device: BleDevice]
+}>()
 
 const rssiLevel = computed(() => rssiToLevel(props.device.RSSI))
 const rssiColor = computed(() => rssiToColor(props.device.RSSI))
@@ -123,11 +134,15 @@ onUnmounted(() => { if (pulseTimer) clearInterval(pulseTimer) })
 .uuid-text { font-size: 10px; color: var(--color-primary); font-family: 'Courier New', monospace; }
 
 /* 操作 */
-.device-action { display: flex; align-items: center; flex-shrink: 0; }
+.device-action { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .connect-arrow { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: rgba(var(--color-primary-rgb), 0.08); border-radius: 8px; }
 .arrow-icon { font-size: 20px; color: var(--color-primary); font-weight: 300; line-height: 1; }
 .connecting-spin { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; }
 .spin-ring { width: 22px; height: 22px; border: 2px solid var(--border-subtle); border-top-color: var(--color-primary); border-radius: 50%; animation: ble-spin 0.8s linear infinite; }
+.pin-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: rgba(var(--color-primary-rgb), 0.06); border-radius: 8px; }
+.pin-btn-icon { font-size: 16px; line-height: 1; }
+.pin-badge { display: flex; align-items: center; }
+.pin-badge-text { font-size: 12px; line-height: 1; }
 
 /* 脉冲光效 */
 .signal-pulse { position: absolute; right: 0; top: 0; bottom: 0; width: 3px; border-radius: 0 12px 12px 0; transition: opacity 0.6s ease; }
