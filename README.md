@@ -8,7 +8,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178c6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
 [![Pinia](https://img.shields.io/badge/Pinia-2.x-ffd859?style=flat-square)](https://pinia.vuejs.org/)
 [![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS-lightgrey?style=flat-square)](https://uniapp.dcloud.net.cn/)
-[![Version](https://img.shields.io/badge/Version-1.0.0-00F5FF?style=flat-square)](#)
+[![Version](https://img.shields.io/badge/Version-1.1.0-00F5FF?style=flat-square)](#)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](#)
 
 [中文文档](./README_Zh.md) · [Features](#features) · [Quick Start](#quick-start) · [Architecture](#architecture) · [Screenshots](#screenshots)
@@ -19,7 +19,7 @@
 
 ## Overview
 
-**BLE Debugger** is a cross-platform (Android / iOS) Bluetooth Low Energy debugging assistant built with UniApp + Vue3. Designed for embedded engineers and hardware developers, it delivers a serial-tool-like experience for wireless debugging — complete with real-time HEX/ASCII communication, service tree inspection, notify subscriptions, quick command management, and log export.
+**BLE Debugger** is a cross-platform (Android / iOS) Bluetooth Low Energy debugging assistant built with UniApp + Vue3. Designed for embedded engineers and hardware developers, it delivers a serial-tool-like experience for wireless debugging — complete with real-time HEX/ASCII communication, service tree inspection, notify subscriptions, quick command management, RSSI signal charts, MTU negotiation, characteristic value diff history, custom protocol plugin execution, and multi-format log export.
 
 The app ships with two display themes (Dark / Light) and full bilingual support (Chinese / English), switchable at any time without restarting.
 
@@ -35,13 +35,16 @@ The app ships with two display themes (Dark / Light) and full bilingual support 
 - **Notify Subscriptions** — Toggle BLE notifications per characteristic
 - **Read on Demand** — Trigger explicit characteristic reads
 - **Auto-Reconnect** — Automatic reconnection with configurable heartbeat keep-alive
+- **MTU Negotiation** — Negotiate MTU size (23–512 bytes) directly from the device page with real-time feedback
 
 ### Developer Experience
 - **Quick Commands** — Save frequently used payloads with custom names; long-press to delete
 - **Communication Log** — Timestamped, color-coded TX/RX/SYS entries with 2000-entry ring buffer
 - **Dual Display Mode** — View data in HEX, ASCII, or DUAL mode simultaneously
-- **Log Export** — Export session logs as plain text files to local storage
-- **Protocol Analysis** — Built-in RAW / UART parser; extensible custom protocol slot
+- **Log Export (TXT / CSV)** — Export session logs in plain text or spreadsheet-ready CSV format; format selected at export time
+- **Protocol Analysis** — Built-in RAW / UART parser; **custom JavaScript plugin system** for user-defined frame parsers
+- **RSSI Signal Chart** — Live bar chart of received signal strength over time, polled every 2 s while connected
+- **Characteristic Value Diff** — Per-characteristic history of received values with byte-level change highlighting
 - **Recent Devices** — Quick reconnect from a persistent recent-device list
 
 ### UI / UX
@@ -59,7 +62,7 @@ The app ships with two display themes (Dark / Light) and full bilingual support 
 
 | Scan | Device Services | Debug Console |
 |------|----------------|---------------|
-| Radar animation, RSSI bars, filter | Expandable service tree, property badges | HEX/ASCII I/O, log panel, protocol parser |
+| Radar animation, RSSI bars, filter | Service tree · MTU panel · RSSI chart | HEX/ASCII I/O · log panel · protocol parser · diff history |
 
 ---
 
@@ -73,7 +76,7 @@ The app ships with two display themes (Dark / Light) and full bilingual support 
 | BLE API | UniApp native BLE APIs (Promise-wrapped) |
 | Styling | Scoped SCSS + CSS Custom Properties (dual theme) |
 | i18n | Custom `useI18n` composable (dot-notation keys) |
-| Storage | `uni.setStorageSync` for settings & quick commands |
+| Storage | `uni.setStorageSync` for settings, quick commands & plugins |
 
 ---
 
@@ -129,22 +132,28 @@ uniapp-ble-debugging-assistant/
 │
 ├── pages/
 │   ├── scan/index.vue          # Device scan page (home)
-│   ├── device/index.vue        # Service & characteristic tree
-│   └── debug/index.vue         # BLE communication console
+│   ├── device/index.vue        # Service tree · MTU negotiation · RSSI chart
+│   ├── debug/index.vue         # BLE communication console · diff history · protocol plugin
+│   └── protocol/index.vue      # Protocol plugin management (add / edit / enable)
 │
 ├── components/
 │   ├── DeviceItem.vue           # Scan list card (RSSI bars, connectable badge)
 │   ├── BleLogPanel.vue          # Communication log viewer
 │   ├── HexInput.vue             # HEX/ASCII input + quick commands + send
 │   ├── RadarScanAnimation.vue   # Animated radar with device dots
+│   ├── RssiChart.vue            # Live RSSI bar chart (connected device signal history)
+│   ├── DiffModal.vue            # Characteristic value history with byte-level diff highlight
 │   └── SettingsPanel.vue        # Bottom-sheet: theme & language switcher
 │
 ├── services/
 │   └── bleManager.ts            # BLE abstraction layer (state machine, Promise API)
+│                                #   + getRSSI()  + negotiateMTU()
 │
 ├── store/
 │   ├── bleStore.ts              # BLE runtime state (devices, logs, characteristics)
-│   └── appStore.ts              # App settings state (theme, locale, CSS variables)
+│   │                            #   + rssiHistory  + charValueHistory  + currentMtu
+│   ├── appStore.ts              # App settings state (theme, locale, CSS variables)
+│   └── protocolStore.ts         # Protocol plugin registry (add / run / persist)
 │
 ├── composables/
 │   └── useI18n.ts               # i18n composable — t('dot.notation.key')
@@ -155,7 +164,7 @@ uniapp-ble-debugging-assistant/
 │
 ├── utils/
 │   ├── hex.ts                   # HEX↔ArrayBuffer, ASCII, UUID, RSSI utilities
-│   └── buffer.ts                # Log entries, ring buffer, export, persistence
+│   └── buffer.ts                # Log entries, ring buffer, TXT/CSV export, persistence
 │
 ├── App.vue                      # Global CSS custom property definitions (both themes)
 ├── pages.json                   # Route configuration
@@ -200,6 +209,25 @@ t('debug.bytes')      // → '字节'     | 'bytes'
 
 Switching `appStore.locale` between `'zh'` and `'en'` is reactive and updates all `t()` calls instantly.
 
+### Protocol Plugin System
+
+Plugins are plain JavaScript function bodies stored in `uni.setStorageSync`. Each plugin receives `hexStr` and `asciiStr` as arguments and must return `{ fields: [{ name, value }] }`.
+
+```js
+// Example plugin — parse a 4-byte custom frame
+const b = hexStr.split(' ').map(h => parseInt(h, 16));
+return {
+  fields: [
+    { name: 'CMD',     value: '0x' + b[0].toString(16).toUpperCase() },
+    { name: 'Length',  value: b[1] + ' bytes' },
+    { name: 'Payload', value: hexStr.slice(6) },
+    { name: 'CRC',     value: '0x' + b[b.length - 1].toString(16).toUpperCase() },
+  ]
+};
+```
+
+Plugins are executed via `new Function()` in `protocolStore.runPlugin()`. Only one plugin can be enabled at a time. Manage plugins at **Debug → Protocol → Custom → Manage Plugins**.
+
 ---
 
 ## Key Files Reference
@@ -218,6 +246,8 @@ Switching `appStore.locale` between `'zh'` and `'en'` is reactive and updates al
 | `write(deviceId, serviceId, charId, buffer)` | Write data to characteristic |
 | `read(deviceId, serviceId, charId)` | Read characteristic value |
 | `setNotify(deviceId, serviceId, charId, enable)` | Toggle BLE notifications |
+| `getRSSI(deviceId)` | Query current RSSI of connected device |
+| `negotiateMTU(mtu)` | Request MTU negotiation (23–512); returns actual MTU |
 | `onData(listener)` | Subscribe to incoming characteristic data |
 
 ### `utils/hex.ts`
@@ -232,6 +262,14 @@ Switching `appStore.locale` between `'zh'` and `'en'` is reactive and updates al
 | `shortUUID(uuid)` | Shorten UUID to `0xXXXX` form |
 | `rssiToLevel(rssi)` | RSSI → signal bar level (1–5) |
 | `rssiToColor(rssi)` | RSSI → color string |
+
+### `utils/buffer.ts`
+
+| Function | Description |
+|----------|-------------|
+| `exportLogsToText(logs, device)` | Serialize log array as formatted plain text |
+| `exportLogsToCSV(logs, device)` | Serialize log array as RFC-4180 CSV |
+| `saveLogsToFile(content, filename, mimeType)` | Write file to local storage (App) or trigger download (H5) |
 
 ---
 
@@ -271,6 +309,7 @@ Switching `appStore.locale` between `'zh'` and `'en'` is reactive and updates al
 | Language | `ble_app_locale` | `zh` |
 | Quick Commands | `ble_quick_commands` | `[]` |
 | Recent Devices | `ble_recent_devices` | `[]` |
+| Protocol Plugins | `ble_protocol_plugins` | `[]` |
 
 All settings survive app restarts via `uni.setStorageSync`.
 
@@ -278,11 +317,12 @@ All settings survive app restarts via `uni.setStorageSync`.
 
 ## Roadmap
 
-- [ ] BLE signal strength chart (RSSI over time)
-- [ ] Custom protocol parser plugin system
-- [ ] MTU negotiation control
-- [ ] Characteristic value history diff view
-- [ ] Export logs as CSV
+- [x] BLE signal strength chart (RSSI over time) — _v1.1.0_
+- [x] Custom protocol parser plugin system — _v1.1.0_
+- [x] MTU negotiation control — _v1.1.0_
+- [x] Characteristic value history diff view — _v1.1.0_
+- [x] Export logs as CSV — _v1.1.0_
+- [ ] Multi-device simultaneous debugging
 
 ---
 
@@ -293,7 +333,7 @@ All settings survive app restarts via `uni.setStorageSync`.
 3. Commit your changes: `git commit -m 'feat: add my feature'`
 4. Push and open a Pull Request
 
-Please follow the existing TypeScript + Vue3 Composition API style.
+Please follow the existing TypeScript + Vue3 Composition API style. All UI text must be added to both `locales/zh.ts` and `locales/en.ts`.
 
 ---
 
