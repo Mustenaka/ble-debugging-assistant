@@ -111,11 +111,14 @@ export const useBleStore = defineStore('ble', () => {
   // ── 扫描操作 ─────────────────────────────────────────────────────────────
 
   async function startScan(timeoutMs = 15000) {
+    console.log('[BleStore] startScan() called, bleState:', bleState.value)
     try {
       errorMessage.value = ''
       scannedDevices.value = []
       await bleManager.startScan({ timeoutMs })
+      console.log('[BleStore] startScan() succeeded, bleState:', bleState.value)
     } catch (e: any) {
+      console.error('[BleStore] startScan() caught error — code:', (e as any).code, '| message:', e.message, '| raw:', JSON.stringify((e as any).raw))
       errorMessage.value = e.message ?? '扫描失败'
       throw e
     }

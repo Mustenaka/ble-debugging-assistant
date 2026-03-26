@@ -195,28 +195,36 @@ watch(() => appStore.locale, () => {
 }, { immediate: true })
 
 async function requestBlePermission() {
+  console.log('[ScanPage] requestBlePermission() called')
   // #ifdef APP-PLUS
   try {
     plus.android.requestPermissions(
       ['android.permission.BLUETOOTH_SCAN', 'android.permission.BLUETOOTH_CONNECT', 'android.permission.ACCESS_FINE_LOCATION'],
       (e: any) => {
+        console.log('[ScanPage] permissions result — granted:', JSON.stringify(e.granted), '| denied:', JSON.stringify(e.denied), '| deniedAlways:', JSON.stringify(e.deniedAlways))
         if (e.deniedAlways?.length) {
           uni.showModal({ title: t('scan.permissionTitle'), content: t('scan.permissionDenied'), showCancel: false })
         }
       },
-      () => {}
+      (e: any) => {
+        console.error('[ScanPage] requestPermissions error callback:', JSON.stringify(e))
+      }
     )
-  } catch {}
+  } catch (ex) {
+    console.error('[ScanPage] requestBlePermission exception:', ex)
+  }
   // #endif
 }
 
 async function toggleScan() {
+  console.log('[ScanPage] toggleScan() called, isScanning:', bleStore.isScanning, '| bleState:', bleStore.bleState)
   if (bleStore.isScanning) {
     await bleStore.stopScan()
   } else {
     try {
       await bleStore.startScan(20000)
     } catch (e: any) {
+      console.error('[ScanPage] toggleScan() startScan threw — code:', (e as any).code, '| message:', e.message)
       uni.showToast({ title: e.message ?? t('scan.scanFailed'), icon: 'none', duration: 2000 })
     }
   }

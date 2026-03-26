@@ -71,12 +71,15 @@ const BLE_ERROR_MAP: Record<number, string> = {
   10011: '未授权蓝牙权限',
   10012: '位置权限未授权（Android）',
   10013: '当前蓝牙适配器状态不允许连接',
+  10016: '位置服务未开启，请在系统设置中开启 GPS',
 }
 
 function createBleError(errCode: number, raw?: any): BleError {
+  // uni-app 部分平台返回 err.code 而非 err.errCode，统一兼容
+  const resolvedCode = errCode ?? (raw?.code) ?? 10000
   return {
-    code: errCode,
-    message: BLE_ERROR_MAP[errCode] ?? `未知错误(${errCode})`,
+    code: resolvedCode,
+    message: BLE_ERROR_MAP[resolvedCode] ?? `未知错误(${resolvedCode})`,
     raw,
   }
 }
@@ -141,18 +144,22 @@ class BleManager {
   // ── 初始化蓝牙适配器 ──────────────────────────────────────────────────────
 
   async openAdapter(): Promise<void> {
+    console.log('[BleManager] openAdapter() called, current state:', this.state)
     return new Promise((resolve, reject) => {
       uni.openBluetoothAdapter({
         mode: 'central',
-        success: () => {
+        success: (res: any) => {
+          console.log('[BleManager] openBluetoothAdapter SUCCESS:', JSON.stringify(res))
           this.setState(BleState.IDLE)
           this._registerAdapterStateChange()
           this._registerConnectionStateChange()
           resolve()
         },
         fail: (err: any) => {
+          console.error('[BleManager] openBluetoothAdapter FAIL — raw err:', JSON.stringify(err))
+          console.error('[BleManager] openBluetoothAdapter FAIL — errCode:', err.errCode, '| code:', err.code, '| errMsg:', err.errMsg)
           this.setState(BleState.UNINITIALIZED)
-          reject(createBleError(err.errCode ?? 10000, err))
+          reject(createBleError(err.errCode ?? err.code ?? 10000, err))
         },
       })
     })
@@ -167,7 +174,7 @@ class BleManager {
           this.discoveredDevices.clear()
           resolve()
         },
-        fail: (err: any) => reject(createBleError(err.errCode ?? 10000, err)),
+        fail: (err: any) => reject(createBleError(err.errCode ?? err.code ?? 10000, err)),
       })
     })
   }
@@ -181,14 +188,19 @@ class BleManager {
     powerLevel?: string
     timeoutMs?: number
   }): Promise<void> {
+    console.log('[BleManager] startScan() called, current state:', this.state)
     if (this.state === BleState.UNINITIALIZED) {
+      console.log('[BleManager] state is UNINITIALIZED, calling openAdapter()...')
       await this.openAdapter()
+      console.log('[BleManager] openAdapter() completed, state now:', this.state)
     }
     if (this.state === BleState.SCANNING) {
+      console.log('[BleManager] already scanning, stopping first...')
       await this.stopScan()
     }
 
     this.discoveredDevices.clear()
+    console.log('[BleManager] calling startBluetoothDevicesDiscovery...')
 
     return new Promise((resolve, reject) => {
       uni.startBluetoothDevicesDiscovery({
@@ -196,7 +208,8 @@ class BleManager {
         allowDuplicatesKey: options?.allowDuplicatesKey ?? true,
         interval: options?.interval ?? 500,
         powerLevel: (options?.powerLevel ?? 'medium') as any,
-        success: () => {
+        success: (res: any) => {
+          console.log('[BleManager] startBluetoothDevicesDiscovery SUCCESS:', JSON.stringify(res))
           this.setState(BleState.SCANNING)
           this._registerDeviceFound()
 
@@ -206,7 +219,11 @@ class BleManager {
 
           resolve()
         },
-        fail: (err: any) => reject(createBleError(err.errCode ?? 10000, err)),
+        fail: (err: any) => {
+          console.error('[BleManager] startBluetoothDevicesDiscovery FAIL — raw err:', JSON.stringify(err))
+          console.error('[BleManager] startBluetoothDevicesDiscovery FAIL — errCode:', err.errCode, '| code:', err.code, '| errMsg:', err.errMsg)
+          reject(createBleError(err.errCode ?? err.code ?? 10000, err))
+        },
       })
     })
   }
@@ -262,7 +279,7 @@ class BleManager {
         fail: (err: any) => {
           clearTimeout(timer)
           this.setState(BleState.IDLE)
-          reject(createBleError(err.errCode ?? 10003, err))
+          reject(createBleError(err.errCode ?? err.code ?? 10003, err))
         },
       })
     })
@@ -283,7 +300,7 @@ class BleManager {
           this.setState(BleState.DISCONNECTED)
           resolve()
         },
-        fail: (err: any) => reject(createBleError(err.errCode ?? 10006, err)),
+        fail: (err: any) => reject(createBleError(err.errCode ?? err.code ?? 10006, err)),
       })
     })
   }
@@ -299,7 +316,7 @@ class BleManager {
       uni.getBLEDeviceServices({
         deviceId,
         success: (res: any) => resolve(res.services as BleService[]),
-        fail: (err: any) => reject(createBleError(err.errCode ?? 10004, err)),
+        fail: (err: any) => reject(createBleError(err.errCode ?? err.code ?? 10004, err)),
       })
     })
   }
@@ -323,7 +340,7 @@ class BleManager {
           }))
           resolve(chars)
         },
-        fail: (err: any) => reject(createBleError(err.errCode ?? 10005, err)),
+        fail: (err: any) => reject(createBleError(err.errCode ?? err.code ?? 10005, err)),
       })
     })
   }
@@ -343,7 +360,7 @@ class BleManager {
         characteristicId,
         state: enable,
         success: () => resolve(),
-        fail: (err: any) => reject(createBleError(err.errCode ?? 10007, err)),
+        fail: (err: any) => reject(createBleError(err.errCode ?? err.code ?? 10007, err)),
       })
     })
   }
@@ -376,7 +393,7 @@ class BleManager {
         success: () => {},
         fail: (err: any) => {
           uni.offBLECharacteristicValueChange(handler)
-          reject(createBleError(err.errCode ?? 10007, err))
+          reject(createBleError(err.errCode ?? err.code ?? 10007, err))
         },
       })
     })
@@ -399,7 +416,7 @@ class BleManager {
         value,
         writeType: withResponse ? 'write' : 'writeNoResponse',
         success: () => resolve(),
-        fail: (err: any) => reject(createBleError(err.errCode ?? 10007, err)),
+        fail: (err: any) => reject(createBleError(err.errCode ?? err.code ?? 10007, err)),
       })
     })
   }
