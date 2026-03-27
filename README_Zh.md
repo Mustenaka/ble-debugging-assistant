@@ -23,13 +23,12 @@
 
 应用内置**暗色/亮色双主题**和**中/英双语界面**，无需重启即可随时切换。
 
-![1](./docs/pics/1.jpg)
-
-![4](./docs/pics/4.jpg)
-
-![2](./docs/pics/2.jpg)
-
-![3](./docs/pics/3.jpg)
+<div style="display: flex; flex-wrap: wrap; gap: 10px; max-width: 420px;">
+  <img src="./docs/pics/1.jpg" width="200"/>
+  <img src="./docs/pics/4.jpg" width="200"/>
+  <img src="./docs/pics/2.jpg" width="200"/>
+  <img src="./docs/pics/3.jpg" width="200"/>
+</div>
 
 ---
 
