@@ -86,19 +86,41 @@ export async function saveLogsToFile(content: string, filename?: string, mimeTyp
 
   return new Promise((resolve, reject) => {
     // #ifdef APP-PLUS
-    const fs = uni.getFileSystemManager()
-    const path = `${uni.env.USER_DATA_PATH}/${name}`
-    fs.writeFile({
-      filePath: path,
-      data: content,
-      encoding: 'utf8',
-      success: () => resolve(path),
-      fail: (err: any) => reject(err),
+    // APP 端使用 plus.io（HTML5+ Runtime）写文件到 _doc/ 目录
+    console.log('[Export/saveLogsToFile] APP-PLUS: writing', name, '| content length:', content.length)
+    plus.io.resolveLocalFileSystemURL('_doc/', (dirEntry: any) => {
+      console.log('[Export/saveLogsToFile] _doc/ resolved, getting file entry...')
+      dirEntry.getFile(name, { create: true, exclusive: false }, (fileEntry: any) => {
+        console.log('[Export/saveLogsToFile] fileEntry obtained, creating writer...')
+        fileEntry.createWriter((writer: any) => {
+          writer.onwrite = () => {
+            const localUrl: string = fileEntry.toLocalURL()
+            console.log('[Export/saveLogsToFile] write success — localUrl:', localUrl)
+            resolve(localUrl)
+          }
+          writer.onerror = (e: any) => {
+            console.error('[Export/saveLogsToFile] FileWriter.onerror:', JSON.stringify(e))
+            reject(new Error(e?.message ?? 'FileWriter error'))
+          }
+          console.log('[Export/saveLogsToFile] writer.write() called')
+          writer.write(new Blob([content], { type: mimeType }))
+        }, (e: any) => {
+          console.error('[Export/saveLogsToFile] createWriter error:', JSON.stringify(e))
+          reject(new Error(e?.message ?? 'createWriter error'))
+        })
+      }, (e: any) => {
+        console.error('[Export/saveLogsToFile] getFile error:', JSON.stringify(e))
+        reject(new Error(e?.message ?? 'getFile error'))
+      })
+    }, (e: any) => {
+      console.error('[Export/saveLogsToFile] resolveLocalFileSystemURL error:', JSON.stringify(e))
+      reject(new Error(e?.message ?? 'resolveLocalFileSystemURL error'))
     })
     // #endif
 
     // #ifndef APP-PLUS
     // H5 fallback
+    console.log('[Export/saveLogsToFile] H5 fallback — filename:', name)
     const blob = new Blob([content], { type: mimeType })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')

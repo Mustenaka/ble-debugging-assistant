@@ -299,25 +299,38 @@ async function handleReadChar() {
 async function handleExportLog() {
   showMoreMenu.value = false
   if (!bleStore.logs.length) { uni.showToast({ title: t('debug.noLogs'), icon: 'none' }); return }
+  console.log('[Export] handleExportLog() — logs count:', bleStore.logs.length)
   uni.showActionSheet({
     itemList: [t('settings.exportTxt'), t('settings.exportCsv')],
     success: async (res) => {
+      console.log('[Export] format selected — tapIndex:', res.tapIndex)
       try {
         let content: string
         let filename: string
         let mimeType: string
         if (res.tapIndex === 1) {
+          console.log('[Export] building CSV content...')
           content = exportLogsToCSV(bleStore.logs, bleStore.connectedDevice?.name)
           filename = `ble_log_${Date.now()}.csv`
           mimeType = 'text/csv'
         } else {
+          console.log('[Export] building TXT content...')
           content = exportLogsToText(bleStore.logs, bleStore.connectedDevice?.name)
           filename = `ble_log_${Date.now()}.txt`
           mimeType = 'text/plain'
         }
+        console.log('[Export] content length:', content.length, '| filename:', filename)
         const path = await saveLogsToFile(content, filename, mimeType)
+        console.log('[Export] saveLogsToFile() succeeded — path:', path)
         uni.showModal({ title: t('debug.exportTitle'), content: t('debug.exportSaved') + path, showCancel: false })
-      } catch { uni.showToast({ title: t('debug.exportFailed'), icon: 'none' }) }
+      } catch (e: any) {
+        console.error('[Export] saveLogsToFile() failed —', e)
+        console.error('[Export] error detail — errMsg:', e?.errMsg, '| message:', e?.message, '| code:', e?.code, '| raw:', JSON.stringify(e))
+        uni.showToast({ title: t('debug.exportFailed'), icon: 'none' })
+      }
+    },
+    fail: (err) => {
+      console.log('[Export] showActionSheet cancelled/failed —', JSON.stringify(err))
     },
   })
 }

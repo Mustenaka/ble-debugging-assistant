@@ -189,7 +189,6 @@ export const zh = {
     paste: '粘贴',
     clear: '清空',
   },
-}
 
   pin: {
     title: 'PIN 码配置',
