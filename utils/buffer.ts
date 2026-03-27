@@ -53,9 +53,39 @@ export function logEntryToText(entry: LogEntry): string {
   return `[${ts}] ${dir}${label} HEX: ${entry.hex}  ASCII: ${entry.ascii}`
 }
 
+export interface ExportDeviceInfo {
+  name: string
+  deviceId: string
+  txBytes: number
+  rxBytes: number
+}
+
+/** 根据设备名 + 当前时间生成导出文件名 */
+export function buildExportFilename(deviceName: string, ext: 'txt' | 'csv'): string {
+  const now = new Date()
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
+  const time = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+  const safeName = (deviceName || 'Unknown').replace(/[^\w\u4e00-\u9fa5]/g, '_').slice(0, 20)
+  return `BLE_${safeName}_${date}_${time}.${ext}`
+}
+
 /** 日志列表导出为 CSV */
-export function exportLogsToCSV(logs: LogEntry[], deviceName = 'Unknown'): string {
+export function exportLogsToCSV(logs: LogEntry[], device: ExportDeviceInfo | string = 'Unknown'): string {
+  const info: ExportDeviceInfo = typeof device === 'string'
+    ? { name: device, deviceId: '', txBytes: 0, rxBytes: 0 }
+    : device
   const esc = (s: string) => `"${s.replace(/"/g, '""').replace(/\r?\n/g, ' ')}"`
+  const meta = [
+    `# BLE调试日志`,
+    `# 设备名称,${esc(info.name)}`,
+    `# 设备ID,${esc(info.deviceId)}`,
+    `# 导出时间,${formatTimestamp(Date.now(), true)}`,
+    `# 发送字节,${info.txBytes}`,
+    `# 接收字节,${info.rxBytes}`,
+    `# 日志条数,${logs.length}`,
+    '',
+  ].join('\n')
   const header = ['Time', 'Direction', 'HEX', 'ASCII', 'Bytes', 'Label'].join(',')
   const rows = logs.map((e) => [
     formatTimestamp(e.timestamp, true),
@@ -65,16 +95,24 @@ export function exportLogsToCSV(logs: LogEntry[], deviceName = 'Unknown'): strin
     String(e.rawLength),
     esc(e.label ?? ''),
   ].join(','))
-  return [header, ...rows].join('\n')
+  return meta + [header, ...rows].join('\n')
 }
 
 /** 日志列表导出为文本 */
-export function exportLogsToText(logs: LogEntry[], deviceName = 'Unknown'): string {
+export function exportLogsToText(logs: LogEntry[], device: ExportDeviceInfo | string = 'Unknown'): string {
+  const info: ExportDeviceInfo = typeof device === 'string'
+    ? { name: device, deviceId: '', txBytes: 0, rxBytes: 0 }
+    : device
+  const sep = '═══════════════════════════════════════════════════════'
   const header = [
-    '═══════════════════════════════════════════════════════',
-    `  BLE 调试日志  |  设备: ${deviceName}`,
-    `  导出时间: ${formatTimestamp(Date.now(), true)}`,
-    '═══════════════════════════════════════════════════════',
+    sep,
+    `  BLE 调试日志`,
+    `  设备名称 : ${info.name}`,
+    `  设备 ID  : ${info.deviceId || '—'}`,
+    `  导出时间 : ${formatTimestamp(Date.now(), true)}`,
+    `  发送字节 : ${info.txBytes} B    接收字节 : ${info.rxBytes} B`,
+    `  日志条数 : ${logs.length}`,
+    sep,
     '',
   ].join('\n')
   return header + logs.map(logEntryToText).join('\n')

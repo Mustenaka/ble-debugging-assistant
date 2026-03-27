@@ -163,7 +163,15 @@
     <view v-if="showSaveQuickDialog" class="modal-overlay" @click="showSaveQuickDialog = false">
       <view class="modal-card" @click.stop>
         <text class="modal-title">{{ t('debug.saveQuickCmd') }}</text>
-        <input class="modal-input" v-model="quickCmdName" :placeholder="t('debug.cmdNamePlaceholder')" placeholder-class="modal-ph" maxlength="20" />
+        <input
+          class="modal-input"
+          v-model="quickCmdName"
+          :placeholder="t('debug.cmdNamePlaceholder')"
+          placeholder-class="modal-ph"
+          maxlength="20"
+          :focus="showSaveQuickDialog"
+          :adjust-position="true"
+        />
         <text class="modal-preview mono">{{ pendingQuickData?.data }}</text>
         <view class="modal-actions">
           <view class="modal-btn modal-btn--cancel" @click="showSaveQuickDialog = false"><text>{{ t('common.cancel') }}</text></view>
@@ -195,7 +203,7 @@ import { useBleStore } from '../../store/bleStore'
 import { useAppStore } from '../../store/appStore'
 import { useI18n } from '../../composables/useI18n'
 import { shortUUID } from '../../utils/hex'
-import { exportLogsToText, exportLogsToCSV, saveLogsToFile } from '../../utils/buffer'
+import { exportLogsToText, exportLogsToCSV, saveLogsToFile, buildExportFilename, type ExportDeviceInfo } from '../../utils/buffer'
 import { useProtocolStore } from '../../store/protocolStore'
 import BleLogPanel from '../../components/BleLogPanel.vue'
 import HexInput from '../../components/HexInput.vue'
@@ -299,38 +307,54 @@ async function handleReadChar() {
 async function handleExportLog() {
   showMoreMenu.value = false
   if (!bleStore.logs.length) { uni.showToast({ title: t('debug.noLogs'), icon: 'none' }); return }
-  console.log('[Export] handleExportLog() — logs count:', bleStore.logs.length)
+
+  const deviceInfo: ExportDeviceInfo = {
+    name: bleStore.connectedDevice?.name ?? 'Unknown',
+    deviceId: bleStore.connectedDevice?.deviceId ?? '',
+    txBytes: bleStore.txBytes,
+    rxBytes: bleStore.rxBytes,
+  }
+
   uni.showActionSheet({
     itemList: [t('settings.exportTxt'), t('settings.exportCsv')],
     success: async (res) => {
-      console.log('[Export] format selected — tapIndex:', res.tapIndex)
       try {
         let content: string
         let filename: string
         let mimeType: string
         if (res.tapIndex === 1) {
-          console.log('[Export] building CSV content...')
-          content = exportLogsToCSV(bleStore.logs, bleStore.connectedDevice?.name)
-          filename = `ble_log_${Date.now()}.csv`
+          content = exportLogsToCSV(bleStore.logs, deviceInfo)
+          filename = buildExportFilename(deviceInfo.name, 'csv')
           mimeType = 'text/csv'
         } else {
-          console.log('[Export] building TXT content...')
-          content = exportLogsToText(bleStore.logs, bleStore.connectedDevice?.name)
-          filename = `ble_log_${Date.now()}.txt`
+          content = exportLogsToText(bleStore.logs, deviceInfo)
+          filename = buildExportFilename(deviceInfo.name, 'txt')
           mimeType = 'text/plain'
         }
-        console.log('[Export] content length:', content.length, '| filename:', filename)
         const path = await saveLogsToFile(content, filename, mimeType)
-        console.log('[Export] saveLogsToFile() succeeded — path:', path)
-        uni.showModal({ title: t('debug.exportTitle'), content: t('debug.exportSaved') + path, showCancel: false })
+
+        // 导出成功后提示路径，并提供分享选项
+        uni.showModal({
+          title: t('debug.exportTitle'),
+          content: `${filename}\n\n${t('debug.exportSaved')}${path}`,
+          confirmText: t('debug.exportShare'),
+          cancelText: t('common.ok'),
+          success: (modal) => {
+            if (modal.confirm) {
+              // #ifdef APP-PLUS
+              plus.share.sendWithSystem(
+                { type: 'file', href: path },
+                () => {},
+                (e: any) => { uni.showToast({ title: String(e?.message ?? '分享失败'), icon: 'none' }) },
+              )
+              // #endif
+            }
+          },
+        })
       } catch (e: any) {
-        console.error('[Export] saveLogsToFile() failed —', e)
-        console.error('[Export] error detail — errMsg:', e?.errMsg, '| message:', e?.message, '| code:', e?.code, '| raw:', JSON.stringify(e))
+        console.error('[Export] failed —', e?.message, JSON.stringify(e))
         uni.showToast({ title: t('debug.exportFailed'), icon: 'none' })
       }
-    },
-    fail: (err) => {
-      console.log('[Export] showActionSheet cancelled/failed —', JSON.stringify(err))
     },
   })
 }
