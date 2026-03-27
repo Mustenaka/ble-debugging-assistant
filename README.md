@@ -23,6 +23,14 @@
 
 The app ships with two display themes (Dark / Light) and full bilingual support (Chinese / English), switchable at any time without restarting.
 
+![1](./docs/pics/1.jpg)
+
+![4](./docs/pics/4.jpg)
+
+![2](./docs/pics/2.jpg)
+
+![3](./docs/pics/3.jpg)
+
 ---
 
 ## Features
