@@ -344,22 +344,63 @@ async function handleExportLog() {
         bleStore.addSysLog(`✓ 导出成功: ${path}`)
 
         // #ifdef APP-PLUS
-        // 直接唤起系统分享面板（用户可选择保存到文件、发送给联系人等）
-        console.log('[Export] opening system share — path:', path)
-        plus.share.sendWithSystem(
-          { type: 'file', href: path },
-          () => { console.log('[Export] share panel closed') },
-          (e: any) => {
-            // 分享面板取消或失败时，仅提示保存路径
-            console.warn('[Export] share failed/cancelled —', JSON.stringify(e))
+        if (plus.os.name === 'Android') {
+          // Android 7+ 禁止 file:// URI 跨进程传递，必须通过 FileProvider 生成 content:// URI
+          // HBuilderX 已内置 FileProvider，authority = packageName + '.dc.fileprovider'
+          console.log('[Export] Android share via Java Intent + FileProvider — path:', path)
+          try {
+            const Intent       = plus.android.importClass('android.content.Intent')
+            const File         = plus.android.importClass('java.io.File')
+            const BuildVersion = plus.android.importClass('android.os.Build$VERSION')
+            const activity     = plus.android.runtimeMainActivity()
+
+            const intent = new Intent(Intent.ACTION_SEND)
+            intent.setType(mimeType)
+
+            const file = new File(path)
+            if (BuildVersion.SDK_INT >= 24) {
+              const FileProvider = plus.android.importClass('androidx.core.content.FileProvider')
+              const authority    = activity.getPackageName() + '.dc.fileprovider'
+              console.log('[Export] FileProvider authority:', authority)
+              const uri = FileProvider.getUriForFile(activity, authority, file)
+              console.log('[Export] content:// URI:', uri.toString())
+              intent.putExtra(Intent.EXTRA_STREAM, uri)
+              intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } else {
+              const Uri = plus.android.importClass('android.net.Uri')
+              intent.putExtra(Intent.EXTRA_STREAM, Uri.fromFile(file))
+            }
+
+            const chooser = Intent.createChooser(intent, t('debug.exportShare'))
+            activity.startActivity(chooser)
+            console.log('[Export] share chooser started')
+          } catch (shareErr: any) {
+            console.error('[Export] Java share error —', shareErr?.message ?? JSON.stringify(shareErr))
+            bleStore.addSysLog(`⚠ 分享失败: ${shareErr?.message ?? '未知'}`)
             uni.showModal({
               title: t('debug.exportTitle'),
               content: `${filename}\n\n${t('debug.exportSaved')}${path}`,
               showCancel: false,
               confirmText: t('common.ok'),
             })
-          },
-        )
+          }
+        } else {
+          // iOS: plus.share 可正常传递沙盒内文件
+          console.log('[Export] iOS share via plus.share.sendWithSystem — path:', path)
+          plus.share.sendWithSystem(
+            { type: 'file', href: path },
+            () => { console.log('[Export] iOS share done') },
+            (e: any) => {
+              console.warn('[Export] iOS share failed —', JSON.stringify(e))
+              uni.showModal({
+                title: t('debug.exportTitle'),
+                content: `${filename}\n\n${t('debug.exportSaved')}${path}`,
+                showCancel: false,
+                confirmText: t('common.ok'),
+              })
+            },
+          )
+        }
         // #endif
         // #ifndef APP-PLUS
         uni.showModal({
