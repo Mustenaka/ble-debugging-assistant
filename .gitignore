@@ -2,3 +2,21 @@ node_modules/
 unpackage/
 .hbuilderx/
 .DS_Store
+
+# AI assistant directories
+.claude/
+.codex/
+.cursor/
+.aider*
+.continue/
+
+# Editor & OS
+.idea/
+.vscode/
+Thumbs.db
+*.log
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
