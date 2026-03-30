@@ -120,7 +120,8 @@ export function exportLogsToText(logs: LogEntry[], device: ExportDeviceInfo | st
 
 const EXPORT_SUBFOLDER = 'ble-debugging'
 
-/** 写文件核心：dirEntry → 子目录 → 文件 → writer（使用 onwriteend 确保回调触发） */
+// ─── iOS only: plus.io FileWriter（iOS 平台稳定；Android 上 onwriteend 不触发，已废弃）───
+
 function writeToDir(dirEntry: any, name: string, content: string, mimeType: string): Promise<string> {
   return new Promise((resolve, reject) => {
     console.log('[Export/writeToDir] getDirectory —', EXPORT_SUBFOLDER)
@@ -131,7 +132,7 @@ function writeToDir(dirEntry: any, name: string, content: string, mimeType: stri
         fileEntry.createWriter((writer: any) => {
           writer.onwriteend = () => {
             if (writer.error) {
-              console.error('[Export/writeToDir] onwriteend — writer.error:', JSON.stringify(writer.error))
+              console.error('[Export/writeToDir] onwriteend error —', JSON.stringify(writer.error))
               reject(new Error(writer.error.message ?? 'write error'))
               return
             }
@@ -141,12 +142,10 @@ function writeToDir(dirEntry: any, name: string, content: string, mimeType: stri
             resolve(nativeUrl || localUrl)
           }
           writer.onerror = (e: any) => {
-            console.error('[Export/writeToDir] FileWriter.onerror —', JSON.stringify(e))
+            console.error('[Export/writeToDir] onerror —', JSON.stringify(e))
             reject(new Error(e?.message ?? 'FileWriter error'))
           }
-          // plus.io FileWriter 在部分 Android 版本对 Blob 写入不触发 onwriteend，
-          // 直接写字符串更可靠
-          console.log('[Export/writeToDir] writer.write() called (string mode)')
+          console.log('[Export/writeToDir] writer.write() called')
           writer.write(content)
         }, (e: any) => {
           console.error('[Export/writeToDir] createWriter error —', JSON.stringify(e))
@@ -163,11 +162,62 @@ function writeToDir(dirEntry: any, name: string, content: string, mimeType: stri
   })
 }
 
+// ─── Android: Java 原生 File I/O（绕过 plus.io FileWriter 在 Android 上不稳定的问题）───
+
+/**
+ * 通过 Android Java Bridge 写文件，同步执行（JS 线程短暂阻塞，日志文件通常 < 1MB 可接受）
+ *
+ * usePublicDownloads=true  → /sdcard/Download/ble-debugging/   (需 WRITE_EXTERNAL_STORAGE)
+ * usePublicDownloads=false → /sdcard/Android/data/<pkg>/files/ble-debugging/  (无需权限)
+ */
+function writeViaAndroidJava(name: string, content: string, usePublicDownloads: boolean): Promise<string> {
+  return new Promise((resolve, reject) => {
+    try {
+      const File = plus.android.importClass('java.io.File')
+      const FileOutputStream = plus.android.importClass('java.io.FileOutputStream')
+      const OutputStreamWriter = plus.android.importClass('java.io.OutputStreamWriter')
+      const activity = plus.android.runtimeMainActivity()
+
+      let basePath: string
+      if (usePublicDownloads) {
+        const Environment = plus.android.importClass('android.os.Environment')
+        basePath = Environment
+          .getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+          .getAbsolutePath()
+        console.log('[Export/JavaFile] target: PUBLIC_DOWNLOADS —', basePath)
+      } else {
+        // 外部沙盒目录：无需权限，文件管理器可见，FileProvider 可分享
+        basePath = activity.getExternalFilesDir(null).getAbsolutePath()
+        console.log('[Export/JavaFile] target: externalFilesDir —', basePath)
+      }
+
+      const dir = new File(basePath + '/' + EXPORT_SUBFOLDER)
+      if (!dir.exists()) {
+        const ok: boolean = dir.mkdirs()
+        console.log('[Export/JavaFile] mkdirs:', ok, '—', dir.getAbsolutePath())
+      }
+
+      const file = new File(dir.getAbsolutePath() + '/' + name)
+      const fos = new FileOutputStream(file, false)   // false = overwrite
+      const osw = new OutputStreamWriter(fos, 'UTF-8')
+      osw.write(content)
+      osw.flush()
+      osw.close()
+
+      const filePath: string = file.getAbsolutePath()
+      console.log('[Export/JavaFile] write success —', filePath)
+      resolve(filePath)
+    } catch (e: any) {
+      console.error('[Export/JavaFile] error —', e?.message ?? JSON.stringify(e))
+      reject(new Error(e?.message ?? 'Java File write error'))
+    }
+  })
+}
+
 /** 保存日志到本地文件
- *  Android：先动态申请 WRITE_EXTERNAL_STORAGE，授权后写入公开下载目录，
- *            拒绝或失败则回退到 App 私有目录（_doc/ble-debugging/）
- *  iOS：直接写入 App 私有目录（Documents/ble-debugging/），通过分享面板导出
- *  H5：触发浏览器下载
+ *  Android：Java File I/O（有权限 → 系统 Downloads；无权限 → App 外部文件目录）
+ *  iOS    ：plus.io FileWriter（iOS 稳定）
+ *  H5     ：触发浏览器下载
  */
 export function saveLogsToFile(content: string, filename?: string, mimeType = 'text/plain'): Promise<string> {
   const name = filename ?? `ble_log_${Date.now()}.txt`
@@ -176,36 +226,8 @@ export function saveLogsToFile(content: string, filename?: string, mimeType = 't
     // #ifdef APP-PLUS
     console.log('[Export/saveLogsToFile] APP-PLUS: writing', name, '| content length:', content.length, '| os:', plus.os.name)
 
-    const writeToPublicDownloads = () => {
-      console.log('[Export/saveLogsToFile] trying PUBLIC_DOWNLOADS...')
-      plus.io.requestFileSystem(plus.io.PUBLIC_DOWNLOADS, (fs: any) => {
-        console.log('[Export/saveLogsToFile] PUBLIC_DOWNLOADS acquired')
-        writeToDir(fs.root, name, content, mimeType).then(resolve).catch((e: any) => {
-          console.warn('[Export/saveLogsToFile] PUBLIC_DOWNLOADS write failed, fallback to _doc/ —', e.message)
-          writeToPrivateDoc()
-        })
-      }, (e: any) => {
-        console.warn('[Export/saveLogsToFile] PUBLIC_DOWNLOADS requestFileSystem failed, fallback to _doc/ —', JSON.stringify(e))
-        writeToPrivateDoc()
-      })
-    }
-
-    const writeToPrivateDoc = () => {
-      console.log('[Export/saveLogsToFile] writing to _doc/ble-debugging/')
-      plus.io.resolveLocalFileSystemURL('_doc/', (rootDir: any) => {
-        console.log('[Export/saveLogsToFile] _doc/ resolved')
-        writeToDir(rootDir, name, content, mimeType).then(resolve).catch((e: any) => {
-          console.error('[Export/saveLogsToFile] _doc/ write failed —', e.message)
-          reject(e)
-        })
-      }, (e: any) => {
-        console.error('[Export/saveLogsToFile] _doc/ resolveLocalFileSystemURL error —', JSON.stringify(e))
-        reject(new Error(e?.message ?? '_doc/ error'))
-      })
-    }
-
     if (plus.os.name === 'Android') {
-      // Android 6+ 需要动态申请危险权限
+      // 动态申请 WRITE_EXTERNAL_STORAGE（Android 9 以下有效；Android 10+ 会进 deniedAlways）
       console.log('[Export/saveLogsToFile] Android: requesting WRITE_EXTERNAL_STORAGE...')
       plus.android.requestPermissions(
         ['android.permission.WRITE_EXTERNAL_STORAGE'],
@@ -216,22 +238,29 @@ export function saveLogsToFile(content: string, filename?: string, mimeType = 't
             '| deniedPresent:', JSON.stringify(e.deniedPresent),
             '| deniedAlways:', JSON.stringify(e.deniedAlways),
           )
-          if (granted) {
-            writeToPublicDownloads()
-          } else {
-            // Android 10+ (targetSdkVersion=33) 无法授予此权限，直接回退私有目录
-            console.log('[Export/saveLogsToFile] permission denied — fallback to _doc/')
-            writeToPrivateDoc()
-          }
+          writeViaAndroidJava(name, content, granted)
+            .then(resolve)
+            .catch((err: Error) => {
+              // 公开目录写入失败时回退到外部沙盒目录
+              console.warn('[Export/saveLogsToFile] public write failed, retrying with externalFilesDir —', err.message)
+              writeViaAndroidJava(name, content, false).then(resolve).catch(reject)
+            })
         },
         (e: any) => {
-          console.warn('[Export/saveLogsToFile] requestPermissions error —', JSON.stringify(e))
-          writeToPrivateDoc()
+          console.warn('[Export/saveLogsToFile] requestPermissions error, using externalFilesDir —', JSON.stringify(e))
+          writeViaAndroidJava(name, content, false).then(resolve).catch(reject)
         },
       )
     } else {
-      // iOS：直接写私有目录，再通过分享面板导出到 Files / AirDrop 等
-      writeToPrivateDoc()
+      // iOS：plus.io 在 iOS 平台稳定可用
+      console.log('[Export/saveLogsToFile] iOS: writing to _doc/', name)
+      plus.io.resolveLocalFileSystemURL('_doc/', (rootDir: any) => {
+        console.log('[Export/saveLogsToFile] iOS: _doc/ resolved')
+        writeToDir(rootDir, name, content, mimeType).then(resolve).catch(reject)
+      }, (e: any) => {
+        console.error('[Export/saveLogsToFile] iOS: _doc/ error —', JSON.stringify(e))
+        reject(new Error(e?.message ?? '_doc/ error'))
+      })
     }
     // #endif
 
