@@ -87,8 +87,14 @@
     <view v-else class="services-section">
       <view class="section-hd">
         <text class="section-title">{{ t('device.servicesTitle') }}</text>
-        <view class="refresh-btn" @click="reloadServices">
-          <text class="refresh-icon">↻</text>
+        <view class="section-hd-actions">
+          <view class="export-btn" @click="showExportModal = true">
+            <text class="export-btn-icon">⬆</text>
+            <text class="export-btn-label">{{ t('device.export.btn') }}</text>
+          </view>
+          <view class="refresh-btn" @click="reloadServices">
+            <text class="refresh-icon">↻</text>
+          </view>
         </view>
       </view>
 
@@ -173,16 +179,67 @@
     <!-- 设置面板 -->
     <SettingsPanel :visible="showSettings" @close="showSettings = false" />
 
+    <!-- 导出设备信息弹窗 -->
+    <view v-if="showExportModal" class="dev-modal-overlay" @click="showExportModal = false">
+      <view class="dev-modal-card" @click.stop>
+        <text class="dev-modal-title">{{ t('device.export.title') }}</text>
+
+        <!-- 格式选择 -->
+        <view class="fmt-tabs">
+          <view
+            v-for="fmt in exportFormats"
+            :key="fmt.value"
+            class="fmt-tab"
+            :class="{ 'fmt-tab--active': exportFormat === fmt.value }"
+            @click="exportFormat = fmt.value"
+          >
+            <text class="fmt-tab-text">{{ fmt.label }}</text>
+          </view>
+        </view>
+
+        <!-- 备注输入 -->
+        <view class="notes-section">
+          <text class="notes-label">{{ t('device.export.notesLabel') }}</text>
+          <textarea
+            class="notes-input"
+            v-model="exportNotes"
+            :placeholder="t('device.export.notesPlaceholder')"
+            placeholder-class="notes-ph"
+            maxlength="500"
+            :auto-height="true"
+          />
+        </view>
+
+        <view class="dev-modal-actions">
+          <view class="dev-modal-btn dev-modal-btn--cancel" @click="showExportModal = false">
+            <text>{{ t('common.cancel') }}</text>
+          </view>
+          <view class="dev-modal-btn dev-modal-btn--confirm" :class="{ 'dev-modal-btn--loading': isExporting }" @click="confirmExport">
+            <view v-if="isExporting" class="mini-spin" />
+            <text v-else>{{ t('device.export.confirm') }}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+
   </view>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useBleStore } from '../../store/bleStore'
 import { useAppStore } from '../../store/appStore'
 import { useI18n } from '../../composables/useI18n'
 import type { BleCharacteristic } from '../../services/bleManager'
 import { shortUUID } from '../../utils/hex'
+import {
+  saveLogsToFile,
+  buildDeviceReportFilename,
+  exportDeviceReportToText,
+  exportDeviceReportToMarkdown,
+  exportDeviceReportToCSV,
+  type DeviceReportInfo,
+} from '../../utils/buffer'
 import SettingsPanel from '../../components/SettingsPanel.vue'
 import RssiChart from '../../components/RssiChart.vue'
 import { bleManager } from '../../services/bleManager'
@@ -196,6 +253,17 @@ const showSettings = ref(false)
 const activeService = ref('')
 const mtuInput = ref('')
 const isMtuNegotiating = ref(false)
+
+// ── 导出 ──
+const showExportModal = ref(false)
+const exportNotes = ref('')
+const exportFormat = ref<'txt' | 'md' | 'csv'>('txt')
+const isExporting = ref(false)
+const exportFormats = computed(() => [
+  { value: 'txt', label: t('device.export.fmtTxt') },
+  { value: 'md',  label: t('device.export.fmtMd') },
+  { value: 'csv', label: t('device.export.fmtCsv') },
+])
 
 interface ServiceNode {
   uuid: string; isPrimary: boolean
@@ -274,6 +342,125 @@ async function handleMtuNegotiate() {
     uni.showToast({ title: e.message ?? t('device.mtuFailed'), icon: 'none' })
   } finally {
     isMtuNegotiating.value = false
+  }
+}
+
+async function confirmExport() {
+  if (isExporting.value) return
+  isExporting.value = true
+  try {
+    // 确保所有服务的特征值都已加载
+    for (const node of serviceTree.value) {
+      if (!node.characteristics.length && !node.loading && bleStore.connectedDevice) {
+        node.loading = true
+        try {
+          await bleStore.loadCharacteristics(node.uuid)
+          node.characteristics = bleStore.characteristics.get(node.uuid) ?? []
+        } catch { /* 单个服务加载失败不中断整体导出 */ } finally {
+          node.loading = false
+        }
+      }
+    }
+
+    const reportInfo: DeviceReportInfo = {
+      name:     bleStore.connectedDevice?.name ?? 'Unknown',
+      deviceId: bleStore.connectedDevice?.deviceId ?? '',
+      rssi:     bleStore.connectedDevice?.RSSI,
+      mtu:      bleStore.currentMtu,
+      notes:    exportNotes.value,
+      services: serviceTree.value.map((node) => ({
+        uuid:         node.uuid,
+        isPrimary:    node.isPrimary,
+        charsLoaded:  node.characteristics.length > 0 || node.expanded,
+        characteristics: node.characteristics.map((ch: BleCharacteristic) => ({
+          uuid: ch.uuid,
+          properties: {
+            read:           !!ch.properties.read,
+            write:          !!ch.properties.write,
+            writeNoResponse: !!ch.properties.writeNoResponse,
+            notify:         !!ch.properties.notify,
+            indicate:       !!ch.properties.indicate,
+          },
+        })),
+      })),
+    }
+
+    const fmt = exportFormat.value
+    const mimeType = fmt === 'csv' ? 'text/csv' : 'text/plain'
+    const content =
+      fmt === 'md'  ? exportDeviceReportToMarkdown(reportInfo) :
+      fmt === 'csv' ? exportDeviceReportToCSV(reportInfo) :
+                      exportDeviceReportToText(reportInfo)
+    const filename = buildDeviceReportFilename(reportInfo.name, fmt)
+
+    console.log('[DeviceExport] exporting', filename, '| content length:', content.length)
+    showExportModal.value = false
+
+    const path = await saveLogsToFile(content, filename, mimeType)
+    console.log('[DeviceExport] saved —', path)
+
+    // #ifdef APP-PLUS
+    if (plus.os.name === 'Android') {
+      try {
+        const Intent       = plus.android.importClass('android.content.Intent')
+        const File         = plus.android.importClass('java.io.File')
+        const BuildVersion = plus.android.importClass('android.os.Build$VERSION')
+        const activity     = plus.android.runtimeMainActivity()
+        const intent = new Intent(Intent.ACTION_SEND)
+        intent.setType(mimeType)
+        const file = new File(path)
+        if (BuildVersion.SDK_INT >= 24) {
+          const FileProvider = plus.android.importClass('androidx.core.content.FileProvider')
+          const authority    = activity.getPackageName() + '.dc.fileprovider'
+          console.log('[DeviceExport] FileProvider authority:', authority)
+          const uri = FileProvider.getUriForFile(activity, authority, file)
+          console.log('[DeviceExport] content:// URI:', uri.toString())
+          intent.putExtra(Intent.EXTRA_STREAM, uri)
+          intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } else {
+          const Uri = plus.android.importClass('android.net.Uri')
+          intent.putExtra(Intent.EXTRA_STREAM, Uri.fromFile(file))
+        }
+        activity.startActivity(Intent.createChooser(intent, t('device.export.shareTitle')))
+        console.log('[DeviceExport] share chooser started')
+      } catch (shareErr: any) {
+        console.error('[DeviceExport] share error —', shareErr?.message)
+        uni.showModal({
+          title: t('device.export.success'),
+          content: `${filename}\n\n${t('device.export.savePath')}${path}`,
+          showCancel: false,
+          confirmText: t('common.ok'),
+        })
+      }
+    } else {
+      plus.share.sendWithSystem(
+        { type: 'file', href: path },
+        () => { console.log('[DeviceExport] iOS share done') },
+        (e: any) => {
+          console.warn('[DeviceExport] iOS share failed —', JSON.stringify(e))
+          uni.showModal({
+            title: t('device.export.success'),
+            content: `${filename}\n\n${t('device.export.savePath')}${path}`,
+            showCancel: false,
+            confirmText: t('common.ok'),
+          })
+        },
+      )
+    }
+    // #endif
+    // #ifndef APP-PLUS
+    uni.showModal({
+      title: t('device.export.success'),
+      content: `${filename}\n\n${t('device.export.savePath')}${path}`,
+      showCancel: false,
+      confirmText: t('common.ok'),
+    })
+    // #endif
+  } catch (e: any) {
+    console.error('[DeviceExport] failed —', e?.message, JSON.stringify(e))
+    uni.showToast({ title: t('device.export.failed'), icon: 'none' })
+  } finally {
+    isExporting.value = false
   }
 }
 
@@ -431,6 +618,14 @@ function handleDisconnect() {
 .services-section { flex: 1; display: flex; flex-direction: column; gap: 8px; }
 .section-hd { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; margin-bottom: 4px; }
 .section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.section-hd-actions { display: flex; align-items: center; gap: 6px; }
+.export-btn {
+  display: flex; align-items: center; gap: 4px; height: 32px; padding: 0 10px;
+  background: rgba(var(--color-accent-rgb), 0.08); border: 1px solid rgba(var(--color-accent-rgb), 0.25);
+  border-radius: 8px; &:active { opacity: 0.7; }
+}
+.export-btn-icon { font-size: 13px; color: var(--color-accent); }
+.export-btn-label { font-size: 12px; color: var(--color-accent); font-weight: 600; }
 .refresh-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: rgba(var(--color-primary-rgb), 0.06); border: 1px solid rgba(var(--color-primary-rgb), 0.15); border-radius: 8px; &:active { opacity: 0.7; } }
 .refresh-icon { font-size: 16px; color: var(--color-primary); }
 
@@ -506,4 +701,51 @@ function handleDisconnect() {
 }
 .go-debug-text { font-size: 14px; font-weight: 700; color: var(--bg-base); }
 .go-debug-arrow { font-size: 14px; color: var(--bg-base); }
+
+/* ── 导出弹窗 ── */
+.dev-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 300; }
+.dev-modal-card {
+  background: var(--bg-card); border-radius: 16px; border: 1px solid var(--border-default);
+  padding: 24px; margin: 24px; width: 100%; max-width: 380px;
+  display: flex; flex-direction: column; gap: 16px; box-shadow: var(--shadow-card);
+}
+.dev-modal-title { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+
+/* 格式选择 tabs */
+.fmt-tabs { display: flex; gap: 6px; }
+.fmt-tab {
+  flex: 1; height: 36px; display: flex; align-items: center; justify-content: center;
+  background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 8px;
+  &:active { opacity: 0.75; }
+  &--active {
+    background: rgba(var(--color-primary-rgb), 0.1);
+    border-color: rgba(var(--color-primary-rgb), 0.4);
+    .fmt-tab-text { color: var(--color-primary); }
+  }
+}
+.fmt-tab-text { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+
+/* 备注输入 */
+.notes-section { display: flex; flex-direction: column; gap: 6px; }
+.notes-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.notes-input {
+  background: var(--bg-input); border: 1px solid var(--border-default); border-radius: 8px;
+  padding: 10px 12px; font-size: 13px; color: var(--text-primary); width: 100%;
+  min-height: 72px; max-height: 160px;
+}
+.notes-ph { color: var(--text-dimmed); }
+
+/* 按钮行 */
+.dev-modal-actions { display: flex; gap: 10px; }
+.dev-modal-btn {
+  flex: 1; height: 44px; display: flex; align-items: center; justify-content: center;
+  border-radius: 10px; font-size: 14px; font-weight: 600;
+  &--cancel { background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-secondary); }
+  &--confirm {
+    background: linear-gradient(135deg, var(--color-primary), rgba(var(--color-primary-rgb), 0.7));
+    color: var(--bg-base); box-shadow: 0 0 12px rgba(var(--color-primary-rgb), 0.3);
+    &:active { opacity: 0.85; }
+  }
+  &--loading { opacity: 0.6; }
+}
 </style>

@@ -113,6 +113,21 @@ export const en: I18nKeys = {
     mtuSuccess: 'Negotiated to',
     mtuFailed: 'Negotiation failed',
     rssiChart: 'RSSI Signal History',
+    export: {
+      btn: 'Export',
+      title: 'Export Device Info',
+      notesLabel: 'Debug Notes (optional)',
+      notesPlaceholder: 'Record debug notes, issues, test conclusions...',
+      fmtTxt: 'Text TXT',
+      fmtMd: 'Markdown',
+      fmtCsv: 'Spreadsheet CSV',
+      confirm: 'Export',
+      loadingChars: 'Loading all characteristics...',
+      success: 'Export Successful',
+      failed: 'Export Failed',
+      savePath: 'Saved to:\n',
+      shareTitle: 'Share Report',
+    },
   },
 
   debug: {

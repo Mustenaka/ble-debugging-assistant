@@ -111,6 +111,21 @@ export const zh = {
     mtuSuccess: '已协商为',
     mtuFailed: '协商失败',
     rssiChart: 'RSSI 信号历史',
+    export: {
+      btn: '导出',
+      title: '导出设备信息',
+      notesLabel: '调试备注（可选）',
+      notesPlaceholder: '记录调试要点、问题描述、测试结论...',
+      fmtTxt: '文本 TXT',
+      fmtMd: 'Markdown',
+      fmtCsv: '表格 CSV',
+      confirm: '导出',
+      loadingChars: '正在加载所有特征值...',
+      success: '导出成功',
+      failed: '导出失败',
+      savePath: '保存路径:\n',
+      shareTitle: '分享报告',
+    },
   },
 
   debug: {
