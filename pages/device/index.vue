@@ -177,7 +177,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { useBleStore } from '../../store/bleStore'
 import { useAppStore } from '../../store/appStore'
 import { useI18n } from '../../composables/useI18n'
@@ -203,6 +203,11 @@ interface ServiceNode {
   characteristics: BleCharacteristic[]
 }
 const serviceTree = ref<ServiceNode[]>([])
+
+watch(() => appStore.theme, () => {
+  appStore.applySystemStyle()
+  uni.setNavigationBarTitle({ title: t('device.pageTitle') })
+})
 
 onMounted(async () => {
   appStore.applySystemStyle()
@@ -272,7 +277,7 @@ async function handleMtuNegotiate() {
   }
 }
 
-function goToDebug() { uni.navigateTo({ url: '/pages/debug/index' }) }
+function goToDebug() { uni.switchTab({ url: '/pages/debug/index' }) }
 
 function handleDisconnect() {
   uni.showModal({

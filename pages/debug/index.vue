@@ -237,6 +237,11 @@ onMounted(() => {
 
 onUnmounted(() => { uni.offWindowResize(() => {}) })
 
+watch(() => appStore.theme, () => {
+  appStore.applySystemStyle()
+  uni.setNavigationBarTitle({ title: t('debug.pageTitle') })
+})
+
 watch(() => appStore.locale, () => {
   uni.setNavigationBarTitle({ title: t('debug.pageTitle') })
 })
@@ -331,28 +336,42 @@ async function handleExportLog() {
           filename = buildExportFilename(deviceInfo.name, 'txt')
           mimeType = 'text/plain'
         }
-        const path = await saveLogsToFile(content, filename, mimeType)
+        console.log('[Export] start —', filename, '| logs:', bleStore.logs.length, '| content length:', content.length)
+        bleStore.addSysLog(`⬆ 导出开始: ${filename} (${bleStore.logs.length} 条)`)
 
-        // 导出成功后提示路径，并提供分享选项
+        const path = await saveLogsToFile(content, filename, mimeType)
+        console.log('[Export] saved —', path)
+        bleStore.addSysLog(`✓ 导出成功: ${path}`)
+
+        // #ifdef APP-PLUS
+        // 直接唤起系统分享面板（用户可选择保存到文件、发送给联系人等）
+        console.log('[Export] opening system share — path:', path)
+        plus.share.sendWithSystem(
+          { type: 'file', href: path },
+          () => { console.log('[Export] share panel closed') },
+          (e: any) => {
+            // 分享面板取消或失败时，仅提示保存路径
+            console.warn('[Export] share failed/cancelled —', JSON.stringify(e))
+            uni.showModal({
+              title: t('debug.exportTitle'),
+              content: `${filename}\n\n${t('debug.exportSaved')}${path}`,
+              showCancel: false,
+              confirmText: t('common.ok'),
+            })
+          },
+        )
+        // #endif
+        // #ifndef APP-PLUS
         uni.showModal({
           title: t('debug.exportTitle'),
           content: `${filename}\n\n${t('debug.exportSaved')}${path}`,
-          confirmText: t('debug.exportShare'),
-          cancelText: t('common.ok'),
-          success: (modal) => {
-            if (modal.confirm) {
-              // #ifdef APP-PLUS
-              plus.share.sendWithSystem(
-                { type: 'file', href: path },
-                () => {},
-                (e: any) => { uni.showToast({ title: String(e?.message ?? '分享失败'), icon: 'none' }) },
-              )
-              // #endif
-            }
-          },
+          showCancel: false,
+          confirmText: t('common.ok'),
         })
+        // #endif
       } catch (e: any) {
         console.error('[Export] failed —', e?.message, JSON.stringify(e))
+        bleStore.addSysLog(`⚠ 导出失败: ${e?.message ?? '未知错误'}`)
         uni.showToast({ title: t('debug.exportFailed'), icon: 'none' })
       }
     },

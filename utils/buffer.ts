@@ -118,46 +118,124 @@ export function exportLogsToText(logs: LogEntry[], device: ExportDeviceInfo | st
   return header + logs.map(logEntryToText).join('\n')
 }
 
-/** 保存日志到本地文件 */
-export async function saveLogsToFile(content: string, filename?: string, mimeType = 'text/plain'): Promise<string> {
-  const name = filename ?? `ble_log_${Date.now()}.txt`
+const EXPORT_SUBFOLDER = 'ble-debugging'
 
+/** 写文件核心：dirEntry → 子目录 → 文件 → writer（使用 onwriteend 确保回调触发） */
+function writeToDir(dirEntry: any, name: string, content: string, mimeType: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    // #ifdef APP-PLUS
-    // APP 端使用 plus.io（HTML5+ Runtime）写文件到 _doc/ 目录
-    console.log('[Export/saveLogsToFile] APP-PLUS: writing', name, '| content length:', content.length)
-    plus.io.resolveLocalFileSystemURL('_doc/', (dirEntry: any) => {
-      console.log('[Export/saveLogsToFile] _doc/ resolved, getting file entry...')
-      dirEntry.getFile(name, { create: true, exclusive: false }, (fileEntry: any) => {
-        console.log('[Export/saveLogsToFile] fileEntry obtained, creating writer...')
+    console.log('[Export/writeToDir] getDirectory —', EXPORT_SUBFOLDER)
+    dirEntry.getDirectory(EXPORT_SUBFOLDER, { create: true, exclusive: false }, (subDir: any) => {
+      console.log('[Export/writeToDir] subfolder ready, getFile —', name)
+      subDir.getFile(name, { create: true, exclusive: false }, (fileEntry: any) => {
+        console.log('[Export/writeToDir] fileEntry obtained, creating writer...')
         fileEntry.createWriter((writer: any) => {
-          writer.onwrite = () => {
+          writer.onwriteend = () => {
+            if (writer.error) {
+              console.error('[Export/writeToDir] onwriteend — writer.error:', JSON.stringify(writer.error))
+              reject(new Error(writer.error.message ?? 'write error'))
+              return
+            }
+            const nativeUrl: string = fileEntry.toNativeURL()
             const localUrl: string = fileEntry.toLocalURL()
-            console.log('[Export/saveLogsToFile] write success — localUrl:', localUrl)
-            resolve(localUrl)
+            console.log('[Export/writeToDir] write success — nativeUrl:', nativeUrl, '| localUrl:', localUrl)
+            resolve(nativeUrl || localUrl)
           }
           writer.onerror = (e: any) => {
-            console.error('[Export/saveLogsToFile] FileWriter.onerror:', JSON.stringify(e))
+            console.error('[Export/writeToDir] FileWriter.onerror —', JSON.stringify(e))
             reject(new Error(e?.message ?? 'FileWriter error'))
           }
-          console.log('[Export/saveLogsToFile] writer.write() called')
-          writer.write(new Blob([content], { type: mimeType }))
+          // plus.io FileWriter 在部分 Android 版本对 Blob 写入不触发 onwriteend，
+          // 直接写字符串更可靠
+          console.log('[Export/writeToDir] writer.write() called (string mode)')
+          writer.write(content)
         }, (e: any) => {
-          console.error('[Export/saveLogsToFile] createWriter error:', JSON.stringify(e))
+          console.error('[Export/writeToDir] createWriter error —', JSON.stringify(e))
           reject(new Error(e?.message ?? 'createWriter error'))
         })
       }, (e: any) => {
-        console.error('[Export/saveLogsToFile] getFile error:', JSON.stringify(e))
+        console.error('[Export/writeToDir] getFile error —', JSON.stringify(e))
         reject(new Error(e?.message ?? 'getFile error'))
       })
     }, (e: any) => {
-      console.error('[Export/saveLogsToFile] resolveLocalFileSystemURL error:', JSON.stringify(e))
-      reject(new Error(e?.message ?? 'resolveLocalFileSystemURL error'))
+      console.error('[Export/writeToDir] getDirectory error —', JSON.stringify(e))
+      reject(new Error(e?.message ?? 'getDirectory error'))
     })
+  })
+}
+
+/** 保存日志到本地文件
+ *  Android：先动态申请 WRITE_EXTERNAL_STORAGE，授权后写入公开下载目录，
+ *            拒绝或失败则回退到 App 私有目录（_doc/ble-debugging/）
+ *  iOS：直接写入 App 私有目录（Documents/ble-debugging/），通过分享面板导出
+ *  H5：触发浏览器下载
+ */
+export function saveLogsToFile(content: string, filename?: string, mimeType = 'text/plain'): Promise<string> {
+  const name = filename ?? `ble_log_${Date.now()}.txt`
+
+  return new Promise<string>((resolve, reject) => {
+    // #ifdef APP-PLUS
+    console.log('[Export/saveLogsToFile] APP-PLUS: writing', name, '| content length:', content.length, '| os:', plus.os.name)
+
+    const writeToPublicDownloads = () => {
+      console.log('[Export/saveLogsToFile] trying PUBLIC_DOWNLOADS...')
+      plus.io.requestFileSystem(plus.io.PUBLIC_DOWNLOADS, (fs: any) => {
+        console.log('[Export/saveLogsToFile] PUBLIC_DOWNLOADS acquired')
+        writeToDir(fs.root, name, content, mimeType).then(resolve).catch((e: any) => {
+          console.warn('[Export/saveLogsToFile] PUBLIC_DOWNLOADS write failed, fallback to _doc/ —', e.message)
+          writeToPrivateDoc()
+        })
+      }, (e: any) => {
+        console.warn('[Export/saveLogsToFile] PUBLIC_DOWNLOADS requestFileSystem failed, fallback to _doc/ —', JSON.stringify(e))
+        writeToPrivateDoc()
+      })
+    }
+
+    const writeToPrivateDoc = () => {
+      console.log('[Export/saveLogsToFile] writing to _doc/ble-debugging/')
+      plus.io.resolveLocalFileSystemURL('_doc/', (rootDir: any) => {
+        console.log('[Export/saveLogsToFile] _doc/ resolved')
+        writeToDir(rootDir, name, content, mimeType).then(resolve).catch((e: any) => {
+          console.error('[Export/saveLogsToFile] _doc/ write failed —', e.message)
+          reject(e)
+        })
+      }, (e: any) => {
+        console.error('[Export/saveLogsToFile] _doc/ resolveLocalFileSystemURL error —', JSON.stringify(e))
+        reject(new Error(e?.message ?? '_doc/ error'))
+      })
+    }
+
+    if (plus.os.name === 'Android') {
+      // Android 6+ 需要动态申请危险权限
+      console.log('[Export/saveLogsToFile] Android: requesting WRITE_EXTERNAL_STORAGE...')
+      plus.android.requestPermissions(
+        ['android.permission.WRITE_EXTERNAL_STORAGE'],
+        (e: any) => {
+          const granted = (e.granted as string[]).includes('android.permission.WRITE_EXTERNAL_STORAGE')
+          console.log(
+            '[Export/saveLogsToFile] permission result — granted:', granted,
+            '| deniedPresent:', JSON.stringify(e.deniedPresent),
+            '| deniedAlways:', JSON.stringify(e.deniedAlways),
+          )
+          if (granted) {
+            writeToPublicDownloads()
+          } else {
+            // Android 10+ (targetSdkVersion=33) 无法授予此权限，直接回退私有目录
+            console.log('[Export/saveLogsToFile] permission denied — fallback to _doc/')
+            writeToPrivateDoc()
+          }
+        },
+        (e: any) => {
+          console.warn('[Export/saveLogsToFile] requestPermissions error —', JSON.stringify(e))
+          writeToPrivateDoc()
+        },
+      )
+    } else {
+      // iOS：直接写私有目录，再通过分享面板导出到 Files / AirDrop 等
+      writeToPrivateDoc()
+    }
     // #endif
 
     // #ifndef APP-PLUS
-    // H5 fallback
     console.log('[Export/saveLogsToFile] H5 fallback — filename:', name)
     const blob = new Blob([content], { type: mimeType })
     const url = URL.createObjectURL(blob)

@@ -56,20 +56,20 @@
       {
         "pagePath": "pages/scan/index",
         "text": "扫描",
-        "iconPath": "static/tab_scan.png",
-        "selectedIconPath": "static/tab_scan_active.png"
+        "iconPath": "static/scanning_white.png",
+        "selectedIconPath": "static/scanning_white.png"
       },
       {
         "pagePath": "pages/device/index",
         "text": "设备",
-        "iconPath": "static/tab_device.png",
-        "selectedIconPath": "static/tab_device_active.png"
+        "iconPath": "static/device_white.png",
+        "selectedIconPath": "static/device_white.png"
       },
       {
         "pagePath": "pages/debug/index",
         "text": "调试",
-        "iconPath": "static/tab_debug.png",
-        "selectedIconPath": "static/tab_debug_active.png"
+        "iconPath": "static/debugging_white.png",
+        "selectedIconPath": "static/debugging_white.png"
       }
     ]
   }
