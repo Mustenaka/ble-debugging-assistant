@@ -300,7 +300,17 @@ class BleManager {
           this.setState(BleState.DISCONNECTED)
           resolve()
         },
-        fail: (err: any) => reject(createBleError(err.errCode ?? err.code ?? 10006, err)),
+        fail: (err: any) => {
+          const errCode = err.errCode ?? err.code ?? 10006
+          // errCode 10006 表示连接已经断开，视为断开成功并清理状态
+          if (errCode === 10006) {
+            this.connectedDeviceId = null
+            this.setState(BleState.DISCONNECTED)
+            resolve()
+          } else {
+            reject(createBleError(errCode, err))
+          }
+        },
       })
     })
   }

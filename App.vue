@@ -1,10 +1,20 @@
 <script>
+import { useBleStore } from './store/bleStore'
+
 export default {
   onLaunch() {
     // App启动时初始化系统样式（由各页面 onMounted 调用 applySystemStyle）
   },
-  onShow() {},
-  onHide() {},
+  onShow() {
+    // 从后台回到前台：恢复 RSSI 轮询并验证 BLE 连接是否仍有效
+    const bleStore = useBleStore()
+    bleStore.onAppForeground()
+  },
+  onHide() {
+    // 进入后台：暂停 RSSI 轮询节省电量，停止扫描
+    const bleStore = useBleStore()
+    bleStore.onAppBackground()
+  },
 }
 </script>
 

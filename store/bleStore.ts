@@ -115,7 +115,16 @@ export const useBleStore = defineStore('ble', () => {
 
     bleManager.onConnectionChange((deviceId, connected) => {
       if (!connected && connectedDevice.value?.deviceId === deviceId) {
-        addSysLog(`设备断开连接: ${connectedDevice.value.name}`)
+        const name = connectedDevice.value.name
+        addSysLog(`设备断开连接: ${name}`)
+        // 意外断开（非用户主动操作）时清理所有连接相关状态
+        stopRssiPoll()
+        services.value = []
+        characteristics.value = new Map()
+        activeServiceId.value = ''
+        activeCharacteristicId.value = ''
+        connectedDevice.value = null
+        currentMtu.value = 23
       }
     })
   }
@@ -165,7 +174,11 @@ export const useBleStore = defineStore('ble', () => {
     if (!connectedDevice.value) return
     const name = connectedDevice.value.name
     stopRssiPoll()
-    await bleManager.disconnect()
+    try {
+      await bleManager.disconnect()
+    } catch {
+      // 即使底层 API 返回意外错误，也强制清理本地状态，避免 UI 卡在"已连接"
+    }
     services.value = []
     characteristics.value = new Map()
     activeServiceId.value = ''
@@ -309,6 +322,39 @@ export const useBleStore = defineStore('ble', () => {
     charValueHistory.value = { ...charValueHistory.value, [charId]: arr }
   }
 
+  // ── App 生命周期（切屏处理）────────────────────────────────────────────────
+
+  function onAppBackground() {
+    // 进入后台：暂停 RSSI 轮询节省电量，停止正在进行的扫描
+    if (rssiPollTimer) {
+      clearInterval(rssiPollTimer)
+      rssiPollTimer = null
+    }
+    if (bleState.value === BleState.SCANNING) {
+      bleManager.stopScan()
+    }
+  }
+
+  function onAppForeground() {
+    // 回到前台：若仍处于已连接状态则恢复 RSSI 轮询并验证连接是否仍有效
+    if (connectedDevice.value && bleState.value === BleState.CONNECTED) {
+      if (!rssiPollTimer) startRssiPoll()
+      // 用 RSSI 请求探测连接是否真实存活
+      bleManager.getRSSI(connectedDevice.value.deviceId).catch(() => {
+        // RSSI 获取失败说明连接已断开（后台期间 OS 终止了连接），同步清理状态
+        stopRssiPoll()
+        const name = connectedDevice.value?.name ?? ''
+        services.value = []
+        characteristics.value = new Map()
+        activeServiceId.value = ''
+        activeCharacteristicId.value = ''
+        connectedDevice.value = null
+        currentMtu.value = 23
+        addSysLog(`后台期间连接已断开: ${name}`)
+      })
+    }
+  }
+
   // ── 重置 ──────────────────────────────────────────────────────────────────
 
   function reset() {
@@ -360,6 +406,8 @@ export const useBleStore = defineStore('ble', () => {
     activeCharacteristic,
     // actions
     init,
+    onAppBackground,
+    onAppForeground,
     startScan,
     stopScan,
     connectDevice,
