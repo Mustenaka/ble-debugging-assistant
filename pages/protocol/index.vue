@@ -1,15 +1,19 @@
 <template>
-  <view class="protocol-page" :class="appStore.themeClass" :style="appStore.cssVarsStyle">
+  <view class="protocol-page" :class="[appStore.themeClass, { 'protocol-page--wide': isWideScreen }]" :style="appStore.cssVarsStyle">
+
+    <!-- 宽屏左侧导航（以调试页为当前页，因为协议页从调试页进入） -->
+    <LeftTabBar v-if="isWideScreen" current-path="/pages/debug/index" />
 
     <!-- 插件列表 -->
-    <scroll-view scroll-y class="plugin-scroll">
+    <scroll-view scroll-y class="plugin-scroll" :class="{ 'plugin-scroll--wide': isWideScreen }">
       <!-- 空状态 -->
       <view v-if="!protocolStore.plugins.length" class="empty-wrap">
         <text class="empty-icon">⬡</text>
         <text class="empty-text">{{ t('protocol.noPlugins') }}</text>
       </view>
 
-      <!-- 插件卡片 -->
+      <!-- 插件卡片（宽屏下双列排列） -->
+      <view class="plugin-grid" :class="{ 'plugin-grid--wide': isWideScreen }">
       <view
         v-for="plugin in protocolStore.plugins"
         :key="plugin.id"
@@ -46,6 +50,7 @@
           <text class="code-text">{{ codePreview(plugin.code) }}</text>
         </view>
       </view>
+      </view><!-- /plugin-grid -->
     </scroll-view>
 
     <!-- 添加按钮 -->
@@ -129,10 +134,13 @@ import { ref, onMounted } from 'vue'
 import { useAppStore } from '../../store/appStore'
 import { useProtocolStore, type ProtocolPlugin } from '../../store/protocolStore'
 import { useI18n } from '../../composables/useI18n'
+import { useResponsive } from '../../composables/useResponsive'
+import LeftTabBar from '../../components/LeftTabBar.vue'
 
 const appStore = useAppStore()
 const protocolStore = useProtocolStore()
 const { t } = useI18n()
+const { isWideScreen } = useResponsive()
 
 const showEditor = ref(false)
 const editingPlugin = ref<ProtocolPlugin | null>(null)
@@ -220,12 +228,28 @@ function handleDelete(id: string) {
   background: var(--bg-base);
   display: flex;
   flex-direction: column;
+
+  &--wide { padding-left: 60px; } // 左侧导航栏偏移
 }
 
 /* ── 列表 ── */
 .plugin-scroll {
   flex: 1;
   padding: 12px;
+  &--wide { padding: 16px 20px; }
+}
+
+/* ── 双列网格（宽屏） ── */
+.plugin-grid {
+  display: flex;
+  flex-direction: column;
+
+  &--wide {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    align-items: start;
+  }
 }
 
 /* ── 空状态 ── */
@@ -255,11 +279,13 @@ function handleDelete(id: string) {
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
   padding: 14px 16px;
-  margin-bottom: 10px;
+  margin-bottom: 10px; // 窄屏下的间距
   display: flex;
   flex-direction: column;
   gap: 10px;
   transition: border-color 0.2s;
+
+  .plugin-grid--wide & { margin-bottom: 0; } // 宽屏下由 grid gap 控制间距
 
   &--enabled {
     border-color: rgba(var(--color-primary-rgb), 0.4);

@@ -1,5 +1,14 @@
 <template>
-  <view class="device-page" :class="appStore.themeClass" :style="appStore.cssVarsStyle">
+  <view class="device-page" :class="[appStore.themeClass, { 'device-page--wide': isWideScreen }]" :style="appStore.cssVarsStyle">
+
+    <!-- 宽屏左侧导航栏 -->
+    <LeftTabBar v-if="isWideScreen" current-path="/pages/device/index" />
+
+    <!-- 主体内容（窄屏：单列；宽屏：左35% + 右65%） -->
+    <view class="device-content" :class="{ 'device-content--wide': isWideScreen }">
+
+    <!-- 左栏：设备信息 + MTU + RSSI + 加载 -->
+    <view class="device-left" :class="{ 'device-left--wide': isWideScreen }">
 
     <!-- 设备信息卡 -->
     <view class="device-info-card">
@@ -83,8 +92,13 @@
       </view>
     </view>
 
+    </view><!-- /device-left -->
+
+    <!-- 右栏：服务树 + 底部操作栏 -->
+    <view class="device-right" :class="{ 'device-right--wide': isWideScreen }">
+
     <!-- 服务树 -->
-    <view v-else class="services-section">
+    <view v-if="!isLoadingServices" class="services-section">
       <view class="section-hd">
         <text class="section-title">{{ t('device.servicesTitle') }}</text>
         <view class="section-hd-actions">
@@ -159,8 +173,8 @@
       </view>
     </view>
 
-    <!-- 底部操作栏 -->
-    <view v-if="bleStore.activeCharacteristicId" class="bottom-bar">
+    <!-- 底部操作栏（宽屏下为内联块；窄屏下为 fixed） -->
+    <view v-if="bleStore.activeCharacteristicId" class="bottom-bar" :class="{ 'bottom-bar--inline': isWideScreen }">
       <view class="selected-info">
         <text class="sel-label">{{ t('device.selected') }}</text>
         <text class="sel-uuid mono">{{ shortUUID(bleStore.activeCharacteristicId) }}</text>
@@ -175,6 +189,9 @@
         <text class="go-debug-arrow">→</text>
       </view>
     </view>
+
+    </view><!-- /device-right -->
+    </view><!-- /device-content -->
 
     <!-- 设置面板 -->
     <SettingsPanel :visible="showSettings" @close="showSettings = false" />
@@ -230,6 +247,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useBleStore } from '../../store/bleStore'
 import { useAppStore } from '../../store/appStore'
 import { useI18n } from '../../composables/useI18n'
+import { useResponsive } from '../../composables/useResponsive'
 import type { BleCharacteristic } from '../../services/bleManager'
 import { shortUUID } from '../../utils/hex'
 import {
@@ -242,11 +260,13 @@ import {
 } from '../../utils/buffer'
 import SettingsPanel from '../../components/SettingsPanel.vue'
 import RssiChart from '../../components/RssiChart.vue'
+import LeftTabBar from '../../components/LeftTabBar.vue'
 import { bleManager } from '../../services/bleManager'
 
 const bleStore = useBleStore()
 const appStore = useAppStore()
 const { t } = useI18n()
+const { isWideScreen } = useResponsive()
 
 const isLoadingServices = ref(false)
 const showSettings = ref(false)
@@ -482,6 +502,45 @@ function handleDisconnect() {
 .device-page {
   min-height: 100vh; background: var(--bg-base);
   padding: 12px 12px 80px; display: flex; flex-direction: column; gap: 12px;
+
+  &--wide {
+    padding: 0 0 0 60px; // 左侧导航栏偏移
+    height: 100vh;
+    overflow: hidden;
+    gap: 0;
+  }
+}
+
+/* ── 宽屏布局包装 ── */
+.device-content {
+  display: flex; flex-direction: column; gap: 12px; flex: 1;
+
+  &--wide {
+    flex-direction: row; height: 100%; gap: 0; overflow: hidden;
+  }
+}
+
+.device-left {
+  display: flex; flex-direction: column; gap: 12px;
+
+  &--wide {
+    flex: 35;
+    padding: 12px;
+    overflow-y: auto;
+    border-right: 1px solid var(--border-subtle);
+  }
+}
+
+.device-right {
+  display: flex; flex-direction: column; gap: 12px; flex: 1;
+
+  &--wide {
+    flex: 65;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
 }
 
 /* ── 设备信息卡 ── */
@@ -615,7 +674,10 @@ function handleDisconnect() {
 .loading-text { font-size: 13px; color: var(--text-muted); font-family: 'Courier New', monospace; }
 
 /* ── 服务区 ── */
-.services-section { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.services-section {
+  flex: 1; display: flex; flex-direction: column; gap: 8px;
+  .device-right--wide & { overflow-y: auto; padding: 12px; }
+}
 .section-hd { display: flex; align-items: center; justify-content: space-between; padding: 0 2px; margin-bottom: 4px; }
 .section-title { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
 .section-hd-actions { display: flex; align-items: center; gap: 6px; }
@@ -682,6 +744,12 @@ function handleDisconnect() {
   background: var(--bg-panel); border-top: 1px solid var(--border-subtle);
   padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom));
   display: flex; align-items: center; gap: 12px; z-index: 50;
+
+  &--inline {
+    position: static;
+    padding-bottom: 12px;
+    flex-shrink: 0;
+  }
 }
 .selected-info { flex: 1; display: flex; align-items: center; gap: 6px; }
 .sel-label { font-size: 12px; color: var(--text-muted); }

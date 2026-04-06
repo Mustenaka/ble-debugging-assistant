@@ -1,6 +1,9 @@
 <template>
   <view class="debug-page" :class="[appStore.themeClass, { 'debug-page--wide': isWideScreen }]" :style="appStore.cssVarsStyle">
 
+    <!-- 宽屏左侧导航栏 -->
+    <LeftTabBar v-if="isWideScreen" current-path="/pages/debug/index" />
+
     <!-- 顶部状态栏 -->
     <view class="debug-header">
       <view class="header-left">
@@ -202,6 +205,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useBleStore } from '../../store/bleStore'
 import { useAppStore } from '../../store/appStore'
 import { useI18n } from '../../composables/useI18n'
+import { useResponsive } from '../../composables/useResponsive'
 import { shortUUID } from '../../utils/hex'
 import { exportLogsToText, exportLogsToCSV, saveLogsToFile, buildExportFilename, type ExportDeviceInfo } from '../../utils/buffer'
 import { useProtocolStore } from '../../store/protocolStore'
@@ -209,6 +213,7 @@ import BleLogPanel from '../../components/BleLogPanel.vue'
 import HexInput from '../../components/HexInput.vue'
 import SettingsPanel from '../../components/SettingsPanel.vue'
 import DiffModal from '../../components/DiffModal.vue'
+import LeftTabBar from '../../components/LeftTabBar.vue'
 
 const bleStore = useBleStore()
 const appStore = useAppStore()
@@ -222,20 +227,18 @@ const showSettings = ref(false)
 const showDiffModal = ref(false)
 const activeProtocol = ref('raw')
 const logDisplayMode = ref<'hex' | 'ascii' | 'both'>('hex')
-const isWideScreen = ref(false)
+const { isWideScreen } = useResponsive()
 const showSaveQuickDialog = ref(false)
 const quickCmdName = ref('')
 const pendingQuickData = ref<{ data: string; mode: 'hex' | 'ascii' } | null>(null)
 
 onMounted(() => {
-  checkScreenWidth()
   appStore.applySystemStyle()
   uni.setNavigationBarTitle({ title: t('debug.pageTitle') })
-  uni.onWindowResize((res: any) => { isWideScreen.value = res.size.windowWidth >= 768 })
   if (!bleStore.isConnected) bleStore.addSysLog('⚠ ' + t('debug.notConnected'))
 })
 
-onUnmounted(() => { uni.offWindowResize(() => {}) })
+onUnmounted(() => {})
 
 watch(() => appStore.theme, () => {
   appStore.applySystemStyle()
@@ -245,10 +248,6 @@ watch(() => appStore.theme, () => {
 watch(() => appStore.locale, () => {
   uni.setNavigationBarTitle({ title: t('debug.pageTitle') })
 })
-
-function checkScreenWidth() {
-  isWideScreen.value = uni.getSystemInfoSync().windowWidth >= 768
-}
 
 const canWrite  = computed(() => { const c = bleStore.activeCharacteristic; return !!(c?.properties.write || c?.properties.writeNoResponse) })
 const canRead   = computed(() => !!bleStore.activeCharacteristic?.properties.read)
@@ -458,7 +457,10 @@ function goToDevice() { uni.navigateTo({ url: '/pages/device/index' }) }
 </script>
 
 <style lang="scss" scoped>
-.debug-page { height: 100vh; background: var(--bg-base); display: flex; flex-direction: column; overflow: hidden; }
+.debug-page {
+  height: 100vh; background: var(--bg-base); display: flex; flex-direction: column; overflow: hidden;
+  &--wide { padding-left: 60px; } // 左侧导航栏偏移
+}
 
 /* ── 顶部栏 ── */
 .debug-header {
@@ -504,12 +506,12 @@ function goToDevice() { uni.navigateTo({ url: '/pages/device/index' }) }
 
 /* ── 主体布局 ── */
 .debug-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; &--wide { flex-direction: row; } }
-.log-panel-wrap { flex: 1; min-height: 0; overflow: hidden; &--wide { flex: 1.4; border-right: 1px solid var(--border-subtle); } }
+.log-panel-wrap { flex: 1; min-height: 0; overflow: hidden; &--wide { flex: 55; border-right: 1px solid var(--border-subtle); } }
 .send-panel {
   background: var(--bg-panel); border-top: 1px solid var(--border-subtle);
   padding: 14px; display: flex; flex-direction: column; gap: 12px;
   overflow-y: auto; max-height: 55vh;
-  &--wide { max-height: 100vh; border-top: none; border-left: 1px solid var(--border-subtle); min-width: 320px; max-width: 400px; }
+  &--wide { flex: 45; max-height: 100vh; border-top: none; border-left: 1px solid var(--border-subtle); min-width: 280px; }
 }
 
 /* ── 目标信息 ── */

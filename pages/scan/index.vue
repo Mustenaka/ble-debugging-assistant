@@ -1,148 +1,165 @@
 <template>
   <view class="scan-page" :class="appStore.themeClass" :style="appStore.cssVarsStyle">
 
-    <!-- 顶部状态栏 -->
-    <view class="status-bar">
-      <view class="status-left">
-        <view class="status-dot" :class="stateClass" />
-        <text class="status-text">{{ stateLabel }}</text>
-      </view>
-      <view class="status-right">
-        <text class="version-chip">{{ t('status.version') }}</text>
-        <!-- 语言快切 -->
-        <view class="lang-quick-btn" @click="appStore.toggleLocale()">
-          <text class="lang-quick-text">{{ appStore.locale === 'zh' ? 'EN' : '中' }}</text>
-        </view>
-        <!-- 主题快切 -->
-        <view class="theme-quick-btn" @click="appStore.toggleTheme()">
-          <text class="theme-icon">{{ appStore.isDark ? '☀' : '◑' }}</text>
-        </view>
-        <!-- 设置按钮 -->
-        <view class="settings-trigger" @click="showSettings = true">
-          <text class="settings-icon">⚙</text>
-        </view>
-      </view>
-    </view>
+    <!-- 宽屏左侧导航栏 -->
+    <LeftTabBar v-if="isWideScreen" current-path="/pages/scan/index" />
 
-    <!-- 雷达动画区 -->
-    <view class="radar-section">
-      <RadarScanAnimation
-        :scanning="bleStore.isScanning"
-        :device-count="bleStore.filteredDevices.length"
-        :theme="appStore.theme"
-      />
-    </view>
+    <!-- 主体（窄屏：单列；宽屏：左40% + 右60%） -->
+    <view class="scan-body" :class="{ 'scan-body--wide': isWideScreen }">
 
-    <!-- 过滤 & 控制区 -->
-    <view class="control-card">
-      <view class="filter-row">
-        <view class="filter-input-wrap">
-          <text class="filter-icon">⌕</text>
-          <input
-            class="filter-input"
-            v-model="bleStore.filterName"
-            :placeholder="t('scan.filterPlaceholder')"
-            placeholder-class="filter-ph"
-          />
-          <view v-if="bleStore.filterName" class="filter-clear" @click="bleStore.filterName = ''">
-            <text class="filter-clear-icon">✕</text>
+      <!-- 左栏：状态 + 雷达 + 控制 -->
+      <view class="scan-left" :class="{ 'scan-left--wide': isWideScreen }">
+
+        <!-- 顶部状态栏 -->
+        <view class="status-bar">
+          <view class="status-left">
+            <view class="status-dot" :class="stateClass" />
+            <text class="status-text">{{ stateLabel }}</text>
           </view>
-        </view>
-
-        <view class="rssi-filter">
-          <text class="rssi-label">{{ t('scan.rssiFilter') }}</text>
-          <picker mode="selector" :range="rssiOptions" :value="rssiPickerIndex" @change="onRssiChange">
-            <view class="rssi-picker">
-              <text class="rssi-value">{{ rssiOptions[rssiPickerIndex] }}</text>
-              <text class="rssi-arr">⌄</text>
+          <view class="status-right">
+            <text class="version-chip">{{ t('status.version') }}</text>
+            <!-- 语言快切 -->
+            <view class="lang-quick-btn" @click="appStore.toggleLocale()">
+              <text class="lang-quick-text">{{ appStore.locale === 'zh' ? 'EN' : '中' }}</text>
             </view>
-          </picker>
-        </view>
-      </view>
-
-      <view class="scan-btn-row">
-        <view
-          class="scan-main-btn"
-          :class="{ 'scan-main-btn--stop': bleStore.isScanning }"
-          @click="toggleScan"
-        >
-          <view class="btn-inner">
-            <view v-if="bleStore.isScanning" class="btn-spin" />
-            <text v-else class="btn-icon">◉</text>
-            <text class="btn-label">{{ bleStore.isScanning ? t('scan.stopScan') : t('scan.startScan') }}</text>
+            <!-- 主题快切 -->
+            <view class="theme-quick-btn" @click="appStore.toggleTheme()">
+              <text class="theme-icon">{{ appStore.isDark ? '☀' : '◑' }}</text>
+            </view>
+            <!-- 设置按钮 -->
+            <view class="settings-trigger" @click="showSettings = true">
+              <text class="settings-icon">⚙</text>
+            </view>
           </view>
         </view>
-        <view class="clear-btn" @click="clearDevices">
-          <text class="clear-label">{{ t('common.clear') }}</text>
-        </view>
-      </view>
-    </view>
 
-    <!-- 最近连接 -->
-    <view v-if="bleStore.recentDevices.length && !bleStore.isScanning && !bleStore.filteredDevices.length" class="recent-section">
-      <view class="section-hd">
-        <text class="section-title">{{ t('scan.recentDevices') }}</text>
-        <text class="section-count">{{ bleStore.recentDevices.length }}</text>
-      </view>
-      <view class="recent-list">
-        <view
-          v-for="recent in bleStore.recentDevices.slice(0, 3)"
-          :key="recent.deviceId"
-          class="recent-item"
-          @click="quickReconnect(recent)"
-        >
-          <view class="recent-icon"><text class="ri-text">⟳</text></view>
-          <view class="recent-info">
-            <text class="recent-name">{{ recent.name }}</text>
-            <text class="recent-time">{{ formatRelativeTime(recent.lastConnected) }}</text>
-          </view>
-          <text class="recent-arr">›</text>
+        <!-- 雷达动画区 -->
+        <view class="radar-section">
+          <RadarScanAnimation
+            :scanning="bleStore.isScanning"
+            :device-count="bleStore.filteredDevices.length"
+            :theme="appStore.theme"
+          />
         </view>
-      </view>
-    </view>
 
-    <!-- 设备列表 -->
-    <view class="device-section">
-      <view class="section-hd">
-        <text class="section-title">{{ t('scan.scanResults') }}</text>
-        <view class="section-badges">
-          <view v-if="bleStore.filteredDevices.length" class="count-badge">
-            <text class="count-text">{{ bleStore.filteredDevices.length }}</text>
-          </view>
-          <view v-if="bleStore.isScanning" class="scanning-badge">
-            <text class="scanning-dot anim-blink">●</text>
-            <text class="scanning-text">{{ t('scan.scanningLabel') }}</text>
-          </view>
-        </view>
-      </view>
+        <!-- 过滤 & 控制区 -->
+        <view class="control-card">
+          <view class="filter-row">
+            <view class="filter-input-wrap">
+              <text class="filter-icon">⌕</text>
+              <input
+                class="filter-input"
+                v-model="bleStore.filterName"
+                :placeholder="t('scan.filterPlaceholder')"
+                placeholder-class="filter-ph"
+              />
+              <view v-if="bleStore.filterName" class="filter-clear" @click="bleStore.filterName = ''">
+                <text class="filter-clear-icon">✕</text>
+              </view>
+            </view>
 
-      <scroll-view scroll-y class="device-scroll">
-        <view class="device-list">
-          <view v-if="!bleStore.filteredDevices.length" class="list-empty">
-            <text v-if="bleStore.isScanning" class="empty-scan-text mono">{{ t('scan.searchingDevices') }}</text>
-            <view v-else class="empty-idle">
-              <text class="empty-icon">⊙</text>
-              <text class="empty-tip">{{ t('scan.tapToScan') }}</text>
+            <view class="rssi-filter">
+              <text class="rssi-label">{{ t('scan.rssiFilter') }}</text>
+              <picker mode="selector" :range="rssiOptions" :value="rssiPickerIndex" @change="onRssiChange">
+                <view class="rssi-picker">
+                  <text class="rssi-value">{{ rssiOptions[rssiPickerIndex] }}</text>
+                  <text class="rssi-arr">⌄</text>
+                </view>
+              </picker>
             </view>
           </view>
 
-          <DeviceItem
-            v-for="device in bleStore.filteredDevices"
-            :key="device.deviceId"
-            :device="device"
-            :is-connecting="connectingId === device.deviceId"
-            :connectable-label="t('scan.connectable')"
-            :unknown-label="t('scan.unknownDevice')"
-            :has-pin-config="!!devicePins[device.deviceId]"
-            @connect="connectDevice"
-            @config-pin="openPinModal"
-          />
+          <view class="scan-btn-row">
+            <view
+              class="scan-main-btn"
+              :class="{ 'scan-main-btn--stop': bleStore.isScanning }"
+              @click="toggleScan"
+            >
+              <view class="btn-inner">
+                <view v-if="bleStore.isScanning" class="btn-spin" />
+                <text v-else class="btn-icon">◉</text>
+                <text class="btn-label">{{ bleStore.isScanning ? t('scan.stopScan') : t('scan.startScan') }}</text>
+              </view>
+            </view>
+            <view class="clear-btn" @click="clearDevices">
+              <text class="clear-label">{{ t('common.clear') }}</text>
+            </view>
+          </view>
         </view>
-      </scroll-view>
+
+      </view>
+
+      <!-- 右栏：最近连接 + 设备列表 -->
+      <view class="scan-right" :class="{ 'scan-right--wide': isWideScreen }">
+
+        <!-- 最近连接 -->
+        <view v-if="bleStore.recentDevices.length && !bleStore.isScanning && !bleStore.filteredDevices.length" class="recent-section">
+          <view class="section-hd">
+            <text class="section-title">{{ t('scan.recentDevices') }}</text>
+            <text class="section-count">{{ bleStore.recentDevices.length }}</text>
+          </view>
+          <view class="recent-list">
+            <view
+              v-for="recent in bleStore.recentDevices.slice(0, 3)"
+              :key="recent.deviceId"
+              class="recent-item"
+              @click="quickReconnect(recent)"
+            >
+              <view class="recent-icon"><text class="ri-text">⟳</text></view>
+              <view class="recent-info">
+                <text class="recent-name">{{ recent.name }}</text>
+                <text class="recent-time">{{ formatRelativeTime(recent.lastConnected) }}</text>
+              </view>
+              <text class="recent-arr">›</text>
+            </view>
+          </view>
+        </view>
+
+        <!-- 设备列表 -->
+        <view class="device-section">
+          <view class="section-hd">
+            <text class="section-title">{{ t('scan.scanResults') }}</text>
+            <view class="section-badges">
+              <view v-if="bleStore.filteredDevices.length" class="count-badge">
+                <text class="count-text">{{ bleStore.filteredDevices.length }}</text>
+              </view>
+              <view v-if="bleStore.isScanning" class="scanning-badge">
+                <text class="scanning-dot anim-blink">●</text>
+                <text class="scanning-text">{{ t('scan.scanningLabel') }}</text>
+              </view>
+            </view>
+          </view>
+
+          <scroll-view scroll-y class="device-scroll" :class="{ 'device-scroll--wide': isWideScreen }">
+            <view class="device-list">
+              <view v-if="!bleStore.filteredDevices.length" class="list-empty">
+                <text v-if="bleStore.isScanning" class="empty-scan-text mono">{{ t('scan.searchingDevices') }}</text>
+                <view v-else class="empty-idle">
+                  <text class="empty-icon">⊙</text>
+                  <text class="empty-tip">{{ t('scan.tapToScan') }}</text>
+                </view>
+              </view>
+
+              <DeviceItem
+                v-for="device in bleStore.filteredDevices"
+                :key="device.deviceId"
+                :device="device"
+                :is-connecting="connectingId === device.deviceId"
+                :connectable-label="t('scan.connectable')"
+                :unknown-label="t('scan.unknownDevice')"
+                :has-pin-config="!!devicePins[device.deviceId]"
+                @connect="connectDevice"
+                @config-pin="openPinModal"
+              />
+            </view>
+          </scroll-view>
+        </view>
+
+      </view>
     </view>
 
     <!-- 错误提示 -->
-    <view v-if="bleStore.errorMessage" class="error-toast anim-fade-in">
+    <view v-if="bleStore.errorMessage" class="error-toast anim-fade-in" :class="{ 'error-toast--wide': isWideScreen }">
       <text class="error-icon">⚠</text>
       <text class="error-msg">{{ bleStore.errorMessage }}</text>
       <view class="error-close" @click="bleStore.errorMessage = ''">
@@ -172,6 +189,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useBleStore } from '../../store/bleStore'
 import { useAppStore } from '../../store/appStore'
 import { useI18n } from '../../composables/useI18n'
+import { useResponsive } from '../../composables/useResponsive'
 import { bleManager, BleState, type BleDevice } from '../../services/bleManager'
 import {
   saveDevicePin, removeDevicePin, loadDevicePins,
@@ -181,10 +199,12 @@ import DeviceItem from '../../components/DeviceItem.vue'
 import RadarScanAnimation from '../../components/RadarScanAnimation.vue'
 import SettingsPanel from '../../components/SettingsPanel.vue'
 import PinInputModal from '../../components/PinInputModal.vue'
+import LeftTabBar from '../../components/LeftTabBar.vue'
 
 const bleStore = useBleStore()
 const appStore = useAppStore()
 const { t } = useI18n()
+const { isWideScreen } = useResponsive()
 
 const connectingId = ref<string | null>(null)
 const showSettings = ref(false)
@@ -398,10 +418,52 @@ function formatRelativeTime(ts: number): string {
 .scan-page {
   min-height: 100vh;
   background: var(--bg-base);
+}
+
+/* ── 主体布局 ── */
+.scan-body {
   display: flex;
   flex-direction: column;
   padding: 12px;
   gap: 12px;
+  min-height: 100vh;
+
+  &--wide {
+    flex-direction: row;
+    height: 100vh;
+    min-height: unset;
+    padding: 0;
+    padding-left: 60px; // 左侧导航栏偏移
+    gap: 0;
+    overflow: hidden;
+  }
+}
+
+/* 左栏 */
+.scan-left {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  &--wide {
+    flex: 4;
+    padding: 12px;
+    overflow-y: auto;
+    border-right: 1px solid var(--border-subtle);
+  }
+}
+
+/* 右栏 */
+.scan-right {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  &--wide {
+    flex: 6;
+    padding: 12px;
+    overflow-y: auto;
+  }
 }
 
 /* ── 状态栏 ── */
@@ -526,7 +588,11 @@ function formatRelativeTime(ts: number): string {
 
 /* ── 设备列表 ── */
 .device-section { flex: 1; display: flex; flex-direction: column; }
-.device-scroll { flex: 1; max-height: 400px; }
+.device-scroll {
+  flex: 1;
+  max-height: 400px;
+  &--wide { max-height: none; min-height: 200px; }
+}
 .device-list { display: flex; flex-direction: column; gap: 8px; padding-bottom: 8px; }
 
 .list-empty { display: flex; align-items: center; justify-content: center; padding: 40px 24px; background: var(--bg-panel); border-radius: 12px; border: 1px dashed var(--border-subtle); }
@@ -541,6 +607,7 @@ function formatRelativeTime(ts: number): string {
   display: flex; align-items: center; gap: 8px; padding: 12px 16px;
   background: var(--bg-panel); border: 1px solid var(--color-danger);
   border-radius: 10px; box-shadow: 0 4px 20px rgba(var(--color-danger-rgb), 0.2); z-index: 100;
+  &--wide { left: 76px; } // 60px sidebar + 16px margin
 }
 .error-icon { font-size: 16px; color: var(--color-danger); flex-shrink: 0; }
 .error-msg { flex: 1; font-size: 13px; color: var(--color-danger); }
