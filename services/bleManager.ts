@@ -117,6 +117,14 @@ class BleManager {
   // 已发现设备列表
   private discoveredDevices: Map<string, BleDevice> = new Map()
 
+  // 上次扫描参数（用于连接后重启扫描以克服平台暂停问题）
+  private lastScanApiOptions: {
+    services: string[]
+    allowDuplicatesKey: boolean
+    interval: number
+    powerLevel: string
+  } | null = null
+
   // 事件监听器
   private adapterStateListeners: Set<BleAdapterStateListener> = new Set()
   private deviceStateListeners: Set<BleDeviceStateListener> = new Set()
@@ -250,7 +258,19 @@ class BleManager {
       await this.stopScan()
     }
 
-    this.discoveredDevices.clear()
+    // 保留已连接设备条目，只清除未连接设备的缓存
+    const connectedIds = this.getConnectedDeviceIds()
+    for (const [id] of [...this.discoveredDevices]) {
+      if (!connectedIds.has(id)) this.discoveredDevices.delete(id)
+    }
+
+    // 保存本次扫描参数，供连接后重启扫描使用
+    this.lastScanApiOptions = {
+      services: options?.services ?? [],
+      allowDuplicatesKey: options?.allowDuplicatesKey ?? true,
+      interval: options?.interval ?? 500,
+      powerLevel: options?.powerLevel ?? 'medium',
+    }
 
     return new Promise((resolve, reject) => {
       uni.startBluetoothDevicesDiscovery({
@@ -320,6 +340,21 @@ class BleManager {
           this.setDeviceState(deviceId, BleDeviceState.CONNECTED)
           const cfg = this.reconnectConfigs.get(deviceId)
           if (cfg) cfg.currentAttempts = 0
+          // 某些平台（尤其 iOS）在建立连接期间会暂停扫描
+          // 连接成功后重新触发 discovery，确保扫描持续进行
+          if (this.adapterState === BleAdapterState.SCANNING && this.lastScanApiOptions) {
+            const opts = this.lastScanApiOptions
+            setTimeout(() => {
+              uni.startBluetoothDevicesDiscovery({
+                services: opts.services,
+                allowDuplicatesKey: opts.allowDuplicatesKey,
+                interval: opts.interval,
+                powerLevel: opts.powerLevel as any,
+                success: () => {},
+                fail: () => {},
+              })
+            }, 200)
+          }
           resolve()
         },
         fail: (err: any) => {

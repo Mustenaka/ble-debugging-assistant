@@ -207,10 +207,12 @@ export const useBleStore = defineStore('ble', () => {
 
   // ── 扫描操作 ─────────────────────────────────────────────────────────────
 
-  async function startScan(timeoutMs = 15000) {
+  async function startScan(timeoutMs?: number) {
     try {
       errorMessage.value = ''
-      scannedDevices.value = []
+      // 保留已连接设备的扫描条目，只清除未连接设备（避免重新扫描时丢失已连接设备信息）
+      const connectedIds = new Set(sessions.value.keys())
+      scannedDevices.value = scannedDevices.value.filter(d => connectedIds.has(d.deviceId))
       await bleManager.startScan({ timeoutMs })
     } catch (e: any) {
       errorMessage.value = e.message ?? '扫描失败'

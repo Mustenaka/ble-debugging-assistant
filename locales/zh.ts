@@ -92,6 +92,8 @@ export const zh = {
     minutesAgo: '分钟前',
     hoursAgo: '小时前',
     daysAgo: '天前',
+    scanDuration: '时长',
+    durationUnlimited: '不限',
   },
 
   device: {

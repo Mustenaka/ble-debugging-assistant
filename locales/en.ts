@@ -94,6 +94,8 @@ export const en: I18nKeys = {
     minutesAgo: 'm ago',
     hoursAgo: 'h ago',
     daysAgo: 'd ago',
+    scanDuration: 'Duration',
+    durationUnlimited: 'No Limit',
   },
 
   device: {

@@ -69,6 +69,22 @@
             </view>
           </view>
 
+          <!-- 扫描时长选择 -->
+          <view class="duration-row">
+            <text class="duration-label">{{ t('scan.scanDuration') }}</text>
+            <view class="duration-chips">
+              <view
+                v-for="opt in durationOpts"
+                :key="opt.value"
+                class="dur-chip"
+                :class="{ 'dur-chip--active': scanDuration === opt.value }"
+                @click="scanDuration = opt.value"
+              >
+                <text class="dur-chip-text">{{ opt.label }}</text>
+              </view>
+            </view>
+          </view>
+
           <view class="scan-btn-row">
             <view
               class="scan-main-btn"
@@ -213,6 +229,15 @@ const showSettings = ref(false)
 const rssiOptions = ['-100', '-90', '-80', '-70', '-60']
 const rssiPickerIndex = ref(0)
 
+// ── 扫描时长 ────────────────────────────────────────────────────────────────
+const scanDuration = ref(30) // 默认 30 秒
+const durationOpts = computed(() => [
+  { value: 10, label: '10s' },
+  { value: 30, label: '30s' },
+  { value: 60, label: '60s' },
+  { value: 0, label: `∞ ${t('scan.durationUnlimited')}` },
+])
+
 // ── PIN 码相关 ──────────────────────────────────────────────────────────────
 const devicePins = reactive<Record<string, DevicePinConfig>>(loadDevicePins())
 const showPinModal = ref(false)
@@ -272,7 +297,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  if (bleStore.isScanning) bleStore.stopScan()
+  // 多设备模式：有已连接设备时继续保持扫描，方便追加更多设备
+  if (bleStore.isScanning && !bleStore.hasConnections) {
+    bleStore.stopScan()
+  }
 })
 
 // 主题变化时更新系统导航栏
@@ -309,12 +337,14 @@ async function requestBlePermission() {
 }
 
 async function toggleScan() {
-  console.log('[ScanPage] toggleScan() called, isScanning:', bleStore.isScanning, '| bleState:', bleStore.bleState)
+  console.log('[ScanPage] toggleScan() called, isScanning:', bleStore.isScanning, '| bleState:', bleStore.bleState, '| duration:', scanDuration.value)
   if (bleStore.isScanning) {
     await bleStore.stopScan()
   } else {
     try {
-      await bleStore.startScan(20000)
+      // scanDuration === 0 表示不限时（不传 timeout）
+      const timeout = scanDuration.value > 0 ? scanDuration.value * 1000 : undefined
+      await bleStore.startScan(timeout)
     } catch (e: any) {
       console.error('[ScanPage] toggleScan() startScan threw — code:', (e as any).code, '| message:', e.message)
       uni.showToast({ title: e.message ?? t('scan.scanFailed'), icon: 'none', duration: 2000 })
@@ -561,6 +591,40 @@ function formatRelativeTime(ts: number): string {
 .rssi-picker { display: flex; align-items: center; gap: 2px; padding: 6px 10px; background: var(--bg-input); border: 1px solid var(--border-default); border-radius: 6px; }
 .rssi-value { font-size: 12px; color: var(--color-primary); font-family: 'Courier New', monospace; }
 .rssi-arr { font-size: 10px; color: var(--text-muted); }
+
+/* ── 扫描时长选择 ── */
+.duration-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.duration-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.duration-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.dur-chip {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-input);
+  &:active { opacity: 0.7; }
+  &--active {
+    background: rgba(var(--color-primary-rgb), 0.12);
+    border-color: rgba(var(--color-primary-rgb), 0.5);
+  }
+}
+.dur-chip-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: 'Courier New', monospace;
+  .dur-chip--active & { color: var(--color-primary); font-weight: 600; }
+}
 
 /* ── 扫描按钮 ── */
 .scan-btn-row { display: flex; gap: 10px; }
