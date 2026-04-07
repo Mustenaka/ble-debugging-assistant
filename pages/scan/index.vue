@@ -192,7 +192,7 @@ import { useBleStore } from '../../store/bleStore'
 import { useAppStore } from '../../store/appStore'
 import { useI18n } from '../../composables/useI18n'
 import { useResponsive } from '../../composables/useResponsive'
-import { bleManager, BleState, type BleDevice } from '../../services/bleManager'
+import { bleManager, BleAdapterState, type BleDevice } from '../../services/bleManager'
 import {
   saveDevicePin, removeDevicePin, loadDevicePins,
   type DevicePinConfig,
@@ -411,21 +411,19 @@ function onRssiChange(e: any) {
 }
 
 const stateClass = computed(() => {
-  const map: Record<BleState, string> = {
-    [BleState.UNINITIALIZED]: 'idle', [BleState.IDLE]: 'idle',
-    [BleState.SCANNING]: 'scanning', [BleState.CONNECTING]: 'scanning',
-    [BleState.CONNECTED]: 'connected', [BleState.DISCONNECTED]: 'disconnected',
+  const map: Record<BleAdapterState, string> = {
+    [BleAdapterState.UNINITIALIZED]: 'idle',
+    [BleAdapterState.IDLE]: bleStore.hasConnections ? 'connected' : 'idle',
+    [BleAdapterState.SCANNING]: 'scanning',
   }
-  return map[bleStore.bleState] ?? 'idle'
+  return map[bleStore.adapterState] ?? 'idle'
 })
 
 const stateLabel = computed(() => {
-  const map: Record<BleState, string> = {
-    [BleState.UNINITIALIZED]: t('status.uninitialized'), [BleState.IDLE]: t('status.idle'),
-    [BleState.SCANNING]: t('status.scanning'), [BleState.CONNECTING]: t('status.connecting'),
-    [BleState.CONNECTED]: t('status.connected'), [BleState.DISCONNECTED]: t('status.disconnected'),
-  }
-  return map[bleStore.bleState] ?? '--'
+  if (bleStore.adapterState === BleAdapterState.SCANNING) return t('status.scanning')
+  if (bleStore.hasConnections) return `${t('status.connected')} (${bleStore.sessions.size})`
+  if (bleStore.adapterState === BleAdapterState.IDLE) return t('status.idle')
+  return t('status.uninitialized')
 })
 
 function formatRelativeTime(ts: number): string {

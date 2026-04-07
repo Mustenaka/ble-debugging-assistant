@@ -469,7 +469,7 @@ function confirmSaveQuick() {
   uni.showToast({ title: t('debug.saved'), icon: 'success' })
 }
 
-function goToDevice() { uni.navigateTo({ url: '/pages/device/index' }) }
+function goToDevice() { uni.switchTab({ url: '/pages/device/index' }) }
 </script>
 
 <style lang="scss" scoped>
