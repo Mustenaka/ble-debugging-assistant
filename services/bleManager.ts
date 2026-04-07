@@ -1,14 +1,22 @@
 /**
  * BLE Manager - 蓝牙低功耗管理器
  * 职责：Promise化BLE API、状态机管理、统一错误处理
+ *
+ * 状态机分两层：
+ *   适配器层（BleAdapterState）：UNINITIALIZED / IDLE / SCANNING
+ *   设备层（BleDeviceState）：每设备独立，CONNECTING / CONNECTED / DISCONNECTED
+ *   两层完全独立——扫描与多设备连接可同时进行。
  */
 
 // ─── 类型定义 ────────────────────────────────────────────────────────────────
 
-export enum BleState {
+export enum BleAdapterState {
   UNINITIALIZED = 'UNINITIALIZED',
   IDLE = 'IDLE',
   SCANNING = 'SCANNING',
+}
+
+export enum BleDeviceState {
   CONNECTING = 'CONNECTING',
   CONNECTED = 'CONNECTED',
   DISCONNECTED = 'DISCONNECTED',
@@ -48,7 +56,8 @@ export interface BleError {
   raw?: any
 }
 
-export type BleStateListener = (state: BleState) => void
+export type BleAdapterStateListener = (state: BleAdapterState) => void
+export type BleDeviceStateListener = (deviceId: string, state: BleDeviceState) => void
 export type BleDeviceListener = (devices: BleDevice[]) => void
 export type BleDataListener = (deviceId: string, serviceId: string, characteristicId: string, value: ArrayBuffer) => void
 export type BleConnectionListener = (deviceId: string, connected: boolean) => void
@@ -75,7 +84,6 @@ const BLE_ERROR_MAP: Record<number, string> = {
 }
 
 function createBleError(errCode: number, raw?: any): BleError {
-  // uni-app 部分平台返回 err.code 而非 err.errCode，统一兼容
   const resolvedCode = errCode ?? (raw?.code) ?? 10000
   return {
     code: resolvedCode,
@@ -84,46 +92,92 @@ function createBleError(errCode: number, raw?: any): BleError {
   }
 }
 
+// ─── 每设备重连配置 ──────────────────────────────────────────────────────────
+
+interface ReconnectConfig {
+  enabled: boolean
+  maxAttempts: number
+  currentAttempts: number
+  intervalMs: number
+}
+
 // ─── BLE Manager 类 ──────────────────────────────────────────────────────────
 
 class BleManager {
-  private state: BleState = BleState.UNINITIALIZED
+  // 适配器状态
+  private adapterState: BleAdapterState = BleAdapterState.UNINITIALIZED
   private scanTimer: ReturnType<typeof setTimeout> | null = null
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null
-  private heartbeatTimer: ReturnType<typeof setInterval> | null = null
 
-  private stateListeners: Set<BleStateListener> = new Set()
+  // 每设备状态
+  private deviceStates: Map<string, BleDeviceState> = new Map()
+  private reconnectConfigs: Map<string, ReconnectConfig> = new Map()
+  private reconnectTimers: Map<string, ReturnType<typeof setTimeout>> = new Map()
+  private heartbeatTimers: Map<string, ReturnType<typeof setInterval>> = new Map()
+
+  // 已发现设备列表
+  private discoveredDevices: Map<string, BleDevice> = new Map()
+
+  // 事件监听器
+  private adapterStateListeners: Set<BleAdapterStateListener> = new Set()
+  private deviceStateListeners: Set<BleDeviceStateListener> = new Set()
   private deviceListeners: Set<BleDeviceListener> = new Set()
   private dataListeners: Set<BleDataListener> = new Set()
   private connectionListeners: Set<BleConnectionListener> = new Set()
 
-  private discoveredDevices: Map<string, BleDevice> = new Map()
-  private connectedDeviceId: string | null = null
-  private reconnectConfig = {
-    enabled: false,
-    deviceId: '',
-    maxAttempts: 5,
-    currentAttempts: 0,
-    intervalMs: 3000,
+  // ── 适配器状态机 ──────────────────────────────────────────────────────────
+
+  getAdapterState(): BleAdapterState {
+    return this.adapterState
   }
 
-  // ── 状态机 ────────────────────────────────────────────────────────────────
-
-  getState(): BleState {
-    return this.state
+  private setAdapterState(newState: BleAdapterState) {
+    if (this.adapterState === newState) return
+    this.adapterState = newState
+    this.adapterStateListeners.forEach((fn) => fn(newState))
   }
 
-  private setState(newState: BleState) {
-    if (this.state === newState) return
-    this.state = newState
-    this.stateListeners.forEach((fn) => fn(newState))
+  // ── 设备状态机 ────────────────────────────────────────────────────────────
+
+  getDeviceState(deviceId: string): BleDeviceState | null {
+    return this.deviceStates.get(deviceId) ?? null
+  }
+
+  getConnectedDeviceIds(): Set<string> {
+    const ids = new Set<string>()
+    this.deviceStates.forEach((state, id) => {
+      if (state === BleDeviceState.CONNECTED) ids.add(id)
+    })
+    return ids
+  }
+
+  isDeviceConnected(deviceId: string): boolean {
+    return this.deviceStates.get(deviceId) === BleDeviceState.CONNECTED
+  }
+
+  private setDeviceState(deviceId: string, newState: BleDeviceState) {
+    const prev = this.deviceStates.get(deviceId)
+    if (prev === newState) return
+    this.deviceStates.set(deviceId, newState)
+    this.deviceStateListeners.forEach((fn) => fn(deviceId, newState))
+  }
+
+  private clearDeviceState(deviceId: string) {
+    this.deviceStates.delete(deviceId)
+    this.reconnectConfigs.delete(deviceId)
+    this._stopHeartbeat(deviceId)
+    this._clearReconnectTimer(deviceId)
   }
 
   // ── 事件监听注册 ──────────────────────────────────────────────────────────
 
-  onStateChange(fn: BleStateListener) {
-    this.stateListeners.add(fn)
-    return () => this.stateListeners.delete(fn)
+  onAdapterStateChange(fn: BleAdapterStateListener) {
+    this.adapterStateListeners.add(fn)
+    return () => this.adapterStateListeners.delete(fn)
+  }
+
+  onDeviceStateChange(fn: BleDeviceStateListener) {
+    this.deviceStateListeners.add(fn)
+    return () => this.deviceStateListeners.delete(fn)
   }
 
   onDeviceFound(fn: BleDeviceListener) {
@@ -144,21 +198,20 @@ class BleManager {
   // ── 初始化蓝牙适配器 ──────────────────────────────────────────────────────
 
   async openAdapter(): Promise<void> {
-    console.log('[BleManager] openAdapter() called, current state:', this.state)
+    console.log('[BleManager] openAdapter() called, current state:', this.adapterState)
     return new Promise((resolve, reject) => {
       uni.openBluetoothAdapter({
         mode: 'central',
         success: (res: any) => {
           console.log('[BleManager] openBluetoothAdapter SUCCESS:', JSON.stringify(res))
-          this.setState(BleState.IDLE)
+          this.setAdapterState(BleAdapterState.IDLE)
           this._registerAdapterStateChange()
           this._registerConnectionStateChange()
           resolve()
         },
         fail: (err: any) => {
-          console.error('[BleManager] openBluetoothAdapter FAIL — raw err:', JSON.stringify(err))
-          console.error('[BleManager] openBluetoothAdapter FAIL — errCode:', err.errCode, '| code:', err.code, '| errMsg:', err.errMsg)
-          this.setState(BleState.UNINITIALIZED)
+          console.error('[BleManager] openBluetoothAdapter FAIL:', JSON.stringify(err))
+          this.setAdapterState(BleAdapterState.UNINITIALIZED)
           reject(createBleError(err.errCode ?? err.code ?? 10000, err))
         },
       })
@@ -166,12 +219,13 @@ class BleManager {
   }
 
   async closeAdapter(): Promise<void> {
-    this._clearTimers()
+    this._clearAllTimers()
     return new Promise((resolve, reject) => {
       uni.closeBluetoothAdapter({
         success: () => {
-          this.setState(BleState.UNINITIALIZED)
+          this.setAdapterState(BleAdapterState.UNINITIALIZED)
           this.discoveredDevices.clear()
+          this.deviceStates.clear()
           resolve()
         },
         fail: (err: any) => reject(createBleError(err.errCode ?? err.code ?? 10000, err)),
@@ -188,19 +242,15 @@ class BleManager {
     powerLevel?: string
     timeoutMs?: number
   }): Promise<void> {
-    console.log('[BleManager] startScan() called, current state:', this.state)
-    if (this.state === BleState.UNINITIALIZED) {
-      console.log('[BleManager] state is UNINITIALIZED, calling openAdapter()...')
+    console.log('[BleManager] startScan() called, adapterState:', this.adapterState)
+    if (this.adapterState === BleAdapterState.UNINITIALIZED) {
       await this.openAdapter()
-      console.log('[BleManager] openAdapter() completed, state now:', this.state)
     }
-    if (this.state === BleState.SCANNING) {
-      console.log('[BleManager] already scanning, stopping first...')
+    if (this.adapterState === BleAdapterState.SCANNING) {
       await this.stopScan()
     }
 
     this.discoveredDevices.clear()
-    console.log('[BleManager] calling startBluetoothDevicesDiscovery...')
 
     return new Promise((resolve, reject) => {
       uni.startBluetoothDevicesDiscovery({
@@ -210,18 +260,15 @@ class BleManager {
         powerLevel: (options?.powerLevel ?? 'medium') as any,
         success: (res: any) => {
           console.log('[BleManager] startBluetoothDevicesDiscovery SUCCESS:', JSON.stringify(res))
-          this.setState(BleState.SCANNING)
+          this.setAdapterState(BleAdapterState.SCANNING)
           this._registerDeviceFound()
-
           if (options?.timeoutMs) {
             this.scanTimer = setTimeout(() => this.stopScan(), options.timeoutMs)
           }
-
           resolve()
         },
         fail: (err: any) => {
-          console.error('[BleManager] startBluetoothDevicesDiscovery FAIL — raw err:', JSON.stringify(err))
-          console.error('[BleManager] startBluetoothDevicesDiscovery FAIL — errCode:', err.errCode, '| code:', err.code, '| errMsg:', err.errMsg)
+          console.error('[BleManager] startBluetoothDevicesDiscovery FAIL:', JSON.stringify(err))
           reject(createBleError(err.errCode ?? err.code ?? 10000, err))
         },
       })
@@ -233,16 +280,15 @@ class BleManager {
       clearTimeout(this.scanTimer)
       this.scanTimer = null
     }
-
     return new Promise((resolve) => {
       uni.stopBluetoothDevicesDiscovery({
         success: () => {
-          if (this.state === BleState.SCANNING) {
-            this.setState(BleState.IDLE)
+          if (this.adapterState === BleAdapterState.SCANNING) {
+            this.setAdapterState(BleAdapterState.IDLE)
           }
           resolve()
         },
-        fail: () => resolve(), // 停止扫描失败不阻塞
+        fail: () => resolve(),
       })
     })
   }
@@ -251,19 +297,19 @@ class BleManager {
     return Array.from(this.discoveredDevices.values()).sort((a, b) => b.RSSI - a.RSSI)
   }
 
-  // ── 设备连接 ──────────────────────────────────────────────────────────────
+  // ── 设备连接（不停止扫描）────────────────────────────────────────────────
 
   async connect(deviceId: string, timeout = 10000): Promise<void> {
-    if (this.state === BleState.SCANNING) {
-      await this.stopScan()
-    }
-
-    this.setState(BleState.CONNECTING)
+    // 多设备：连接不停止扫描
+    this.setDeviceState(deviceId, BleDeviceState.CONNECTING)
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         reject(createBleError(10008))
-        this.setState(BleState.IDLE)
+        // 超时时清除 CONNECTING 状态
+        if (this.deviceStates.get(deviceId) === BleDeviceState.CONNECTING) {
+          this.deviceStates.delete(deviceId)
+        }
       }, timeout)
 
       uni.createBLEConnection({
@@ -271,41 +317,38 @@ class BleManager {
         timeout,
         success: () => {
           clearTimeout(timer)
-          this.connectedDeviceId = deviceId
-          this.setState(BleState.CONNECTED)
-          this.reconnectConfig.currentAttempts = 0
+          this.setDeviceState(deviceId, BleDeviceState.CONNECTED)
+          const cfg = this.reconnectConfigs.get(deviceId)
+          if (cfg) cfg.currentAttempts = 0
           resolve()
         },
         fail: (err: any) => {
           clearTimeout(timer)
-          this.setState(BleState.IDLE)
+          this.deviceStates.delete(deviceId)
           reject(createBleError(err.errCode ?? err.code ?? 10003, err))
         },
       })
     })
   }
 
-  async disconnect(deviceId?: string): Promise<void> {
-    const id = deviceId ?? this.connectedDeviceId
-    if (!id) return
-
-    this._stopHeartbeat()
-    this.reconnectConfig.enabled = false
+  async disconnect(deviceId: string): Promise<void> {
+    this._stopHeartbeat(deviceId)
+    const cfg = this.reconnectConfigs.get(deviceId)
+    if (cfg) cfg.enabled = false
 
     return new Promise((resolve, reject) => {
       uni.closeBLEConnection({
-        deviceId: id,
+        deviceId,
         success: () => {
-          this.connectedDeviceId = null
-          this.setState(BleState.DISCONNECTED)
+          this.setDeviceState(deviceId, BleDeviceState.DISCONNECTED)
+          this.clearDeviceState(deviceId)
           resolve()
         },
         fail: (err: any) => {
           const errCode = err.errCode ?? err.code ?? 10006
-          // errCode 10006 表示连接已经断开，视为断开成功并清理状态
           if (errCode === 10006) {
-            this.connectedDeviceId = null
-            this.setState(BleState.DISCONNECTED)
+            this.setDeviceState(deviceId, BleDeviceState.DISCONNECTED)
+            this.clearDeviceState(deviceId)
             resolve()
           } else {
             reject(createBleError(errCode, err))
@@ -313,10 +356,6 @@ class BleManager {
         },
       })
     })
-  }
-
-  getConnectedDeviceId(): string | null {
-    return this.connectedDeviceId
   }
 
   // ── 服务 & 特征值发现 ─────────────────────────────────────────────────────
@@ -365,9 +404,7 @@ class BleManager {
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       uni.notifyBLECharacteristicValueChange({
-        deviceId,
-        serviceId,
-        characteristicId,
+        deviceId, serviceId, characteristicId,
         state: enable,
         success: () => resolve(),
         fail: (err: any) => reject(createBleError(err.errCode ?? err.code ?? 10007, err)),
@@ -383,7 +420,6 @@ class BleManager {
     characteristicId: string
   ): Promise<ArrayBuffer> {
     return new Promise((resolve, reject) => {
-      // 先注册一次性监听
       const handler = (res: any) => {
         if (
           res.deviceId === deviceId &&
@@ -395,11 +431,8 @@ class BleManager {
         }
       }
       uni.onBLECharacteristicValueChange(handler)
-
       uni.readBLECharacteristicValue({
-        deviceId,
-        serviceId,
-        characteristicId,
+        deviceId, serviceId, characteristicId,
         success: () => {},
         fail: (err: any) => {
           uni.offBLECharacteristicValueChange(handler)
@@ -420,10 +453,7 @@ class BleManager {
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       uni.writeBLECharacteristicValue({
-        deviceId,
-        serviceId,
-        characteristicId,
-        value,
+        deviceId, serviceId, characteristicId, value,
         writeType: withResponse ? 'write' : 'writeNoResponse',
         success: () => resolve(),
         fail: (err: any) => reject(createBleError(err.errCode ?? err.code ?? 10007, err)),
@@ -443,11 +473,10 @@ class BleManager {
     })
   }
 
-  // ── MTU 协商 ──────────────────────────────────────────────────────────────
+  // ── MTU 协商（需传入 deviceId）───────────────────────────────────────────
 
-  async negotiateMTU(mtu: number): Promise<number> {
-    const deviceId = this.connectedDeviceId
-    if (!deviceId) throw createBleError(10006)
+  async negotiateMTU(deviceId: string, mtu: number): Promise<number> {
+    if (!this.isDeviceConnected(deviceId)) throw createBleError(10006)
     return new Promise((resolve, reject) => {
       // #ifdef APP-PLUS
       uni.setBLEMTU({
@@ -476,12 +505,11 @@ class BleManager {
     const chunks = this._splitBuffer(data, mtu)
     for (const chunk of chunks) {
       await this.write(deviceId, serviceId, characteristicId, chunk, withResponse)
-      // 避免过快写入
       await this._delay(withResponse ? 50 : 20)
     }
   }
 
-  // ── 心跳包 ────────────────────────────────────────────────────────────────
+  // ── 心跳包（每设备独立）──────────────────────────────────────────────────
 
   startHeartbeat(
     deviceId: string,
@@ -490,59 +518,66 @@ class BleManager {
     payload: ArrayBuffer,
     intervalMs = 5000
   ) {
-    this._stopHeartbeat()
-    this.heartbeatTimer = setInterval(async () => {
-      if (this.state !== BleState.CONNECTED) {
-        this._stopHeartbeat()
+    this._stopHeartbeat(deviceId)
+    const timer = setInterval(async () => {
+      if (!this.isDeviceConnected(deviceId)) {
+        this._stopHeartbeat(deviceId)
         return
       }
       try {
         await this.write(deviceId, serviceId, characteristicId, payload, false)
       } catch {
-        // 心跳失败静默处理，连接断开事件会触发重连
+        // 心跳失败静默处理
       }
     }, intervalMs)
+    this.heartbeatTimers.set(deviceId, timer)
   }
 
-  private _stopHeartbeat() {
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer)
-      this.heartbeatTimer = null
+  private _stopHeartbeat(deviceId: string) {
+    const timer = this.heartbeatTimers.get(deviceId)
+    if (timer) {
+      clearInterval(timer)
+      this.heartbeatTimers.delete(deviceId)
     }
   }
 
-  // ── 自动重连 ──────────────────────────────────────────────────────────────
+  // ── 自动重连（每设备独立）────────────────────────────────────────────────
 
   enableAutoReconnect(deviceId: string, maxAttempts = 5, intervalMs = 3000) {
-    this.reconnectConfig = {
+    this.reconnectConfigs.set(deviceId, {
       enabled: true,
-      deviceId,
       maxAttempts,
       currentAttempts: 0,
       intervalMs,
-    }
+    })
   }
 
-  disableAutoReconnect() {
-    this.reconnectConfig.enabled = false
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer)
-      this.reconnectTimer = null
-    }
+  disableAutoReconnect(deviceId: string) {
+    const cfg = this.reconnectConfigs.get(deviceId)
+    if (cfg) cfg.enabled = false
+    this._clearReconnectTimer(deviceId)
   }
 
-  private _triggerReconnect() {
-    const cfg = this.reconnectConfig
-    if (!cfg.enabled || cfg.currentAttempts >= cfg.maxAttempts) return
-
+  private _triggerReconnect(deviceId: string) {
+    const cfg = this.reconnectConfigs.get(deviceId)
+    if (!cfg || !cfg.enabled || cfg.currentAttempts >= cfg.maxAttempts) return
     cfg.currentAttempts++
-    this.reconnectTimer = setTimeout(async () => {
+    const timer = setTimeout(async () => {
       try {
-        await this.connect(cfg.deviceId)
+        await this.connect(deviceId)
       } catch {
-        this._triggerReconnect()
+        this._triggerReconnect(deviceId)
       }
     }, cfg.intervalMs)
+    this.reconnectTimers.set(deviceId, timer)
+  }
+
+  private _clearReconnectTimer(deviceId: string) {
+    const timer = this.reconnectTimers.get(deviceId)
+    if (timer) {
+      clearTimeout(timer)
+      this.reconnectTimers.delete(deviceId)
+    }
   }
 
   // ── 内部辅助 ──────────────────────────────────────────────────────────────
@@ -550,20 +585,23 @@ class BleManager {
   private _registerAdapterStateChange() {
     uni.onBluetoothAdapterStateChange((res: any) => {
       if (!res.available) {
-        this._clearTimers()
-        this.setState(BleState.UNINITIALIZED)
+        this._clearAllTimers()
+        this.deviceStates.clear()
+        this.setAdapterState(BleAdapterState.UNINITIALIZED)
       }
     })
   }
 
   private _registerConnectionStateChange() {
     uni.onBLEConnectionStateChange((res: any) => {
-      this.connectionListeners.forEach((fn) => fn(res.deviceId, res.connected))
-      if (!res.connected && res.deviceId === this.connectedDeviceId) {
-        this._stopHeartbeat()
-        this.connectedDeviceId = null
-        this.setState(BleState.DISCONNECTED)
-        this._triggerReconnect()
+      const { deviceId, connected } = res
+      this.connectionListeners.forEach((fn) => fn(deviceId, connected))
+      if (!connected && this.deviceStates.get(deviceId) === BleDeviceState.CONNECTED) {
+        this._stopHeartbeat(deviceId)
+        this.setDeviceState(deviceId, BleDeviceState.DISCONNECTED)
+        this._triggerReconnect(deviceId)
+        // 清理状态（reconnect 完成前保留 config 和 timer）
+        this.deviceStates.delete(deviceId)
       }
     })
   }
@@ -609,10 +647,10 @@ class BleManager {
     return new Promise((resolve) => setTimeout(resolve, ms))
   }
 
-  private _clearTimers() {
+  private _clearAllTimers() {
     if (this.scanTimer) { clearTimeout(this.scanTimer); this.scanTimer = null }
-    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null }
-    this._stopHeartbeat()
+    this.heartbeatTimers.forEach((_, id) => this._stopHeartbeat(id))
+    this.reconnectTimers.forEach((_, id) => this._clearReconnectTimer(id))
   }
 }
 

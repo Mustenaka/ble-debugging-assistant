@@ -145,7 +145,9 @@
                 :key="device.deviceId"
                 :device="device"
                 :is-connecting="connectingId === device.deviceId"
+                :is-already-connected="bleStore.sessions.has(device.deviceId)"
                 :connectable-label="t('scan.connectable')"
+                :already-connected-label="t('multiDevice.alreadyConnected')"
                 :unknown-label="t('scan.unknownDevice')"
                 :has-pin-config="!!devicePins[device.deviceId]"
                 @connect="connectDevice"
@@ -323,8 +325,21 @@ async function toggleScan() {
 function clearDevices() { bleStore.scannedDevices = [] }
 
 async function connectDevice(device: BleDevice) {
+  // 已连接：切换到该设备的 session 并跳转调试页
+  if (bleStore.sessions.has(device.deviceId)) {
+    bleStore.switchSession(device.deviceId)
+    uni.navigateTo({ url: '/pages/debug/index' })
+    return
+  }
+
   if (connectingId.value) return
   connectingId.value = device.deviceId
+
+  // 连接数 >= 3 时给出提示
+  if (bleStore.sessions.size >= 3) {
+    uni.showToast({ title: t('multiDevice.tooManyWarning'), icon: 'none', duration: 3000 })
+  }
+
   try {
     uni.showLoading({ title: t('scan.connecting'), mask: true })
     await bleStore.connectDevice(device)
@@ -341,20 +356,17 @@ async function connectDevice(device: BleDevice) {
       }
     }
 
-    uni.navigateTo({ url: '/pages/device/index' })
+    uni.navigateTo({ url: '/pages/debug/index' })
   } catch (e: any) {
     uni.hideLoading()
     const errMsg = e.message ?? t('scan.connectFailed')
-    // 连接失败时提示是否用 PIN 重试
     uni.showModal({
       title: t('scan.connectFailed'),
       content: errMsg,
       confirmText: t('pin.retryWithPin'),
       cancelText: t('common.cancel'),
       success: (res) => {
-        if (res.confirm) {
-          openPinModal(device)
-        }
+        if (res.confirm) openPinModal(device)
       },
     })
   } finally {
@@ -363,6 +375,17 @@ async function connectDevice(device: BleDevice) {
 }
 
 async function quickReconnect(recent: { deviceId: string; name: string }) {
+  // 已连接：直接切换 session 跳调试页
+  if (bleStore.sessions.has(recent.deviceId)) {
+    bleStore.switchSession(recent.deviceId)
+    uni.navigateTo({ url: '/pages/debug/index' })
+    return
+  }
+
+  if (bleStore.sessions.size >= 3) {
+    uni.showToast({ title: t('multiDevice.tooManyWarning'), icon: 'none', duration: 3000 })
+  }
+
   uni.showLoading({ title: t('scan.reconnecting'), mask: true })
   try {
     const device: BleDevice = { deviceId: recent.deviceId, name: recent.name, RSSI: -999 }
@@ -375,7 +398,7 @@ async function quickReconnect(recent: { deviceId: string; name: string }) {
       await autoSendPin(pinConfig, recent.deviceId)
     }
 
-    uni.navigateTo({ url: '/pages/device/index' })
+    uni.navigateTo({ url: '/pages/debug/index' })
   } catch (e: any) {
     uni.hideLoading()
     uni.showToast({ title: e.message ?? t('scan.reconnectFailed'), icon: 'none' })

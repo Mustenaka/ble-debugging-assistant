@@ -8,7 +8,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178c6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
 [![Pinia](https://img.shields.io/badge/Pinia-2.x-ffd859?style=flat-square)](https://pinia.vuejs.org/)
 [![平台](https://img.shields.io/badge/平台-Android%20%7C%20iOS-lightgrey?style=flat-square)](https://uniapp.dcloud.net.cn/)
-[![版本](https://img.shields.io/badge/版本-1.1.0-00F5FF?style=flat-square)](#)
+[![版本](https://img.shields.io/badge/版本-1.2.0-00F5FF?style=flat-square)](#)
 [![协议](https://img.shields.io/badge/协议-MIT-green?style=flat-square)](#)
 
 [English](./README.md) · [功能特性](#功能特性) · [快速开始](#快速开始) · [架构设计](#架构设计) · [界面截图](#界面截图)
@@ -19,7 +19,7 @@
 
 ## 项目简介
 
-**BLE 调试助手**是一款基于 UniApp + Vue3 开发的跨平台（Android / iOS）蓝牙低功耗调试工具。专为嵌入式开发者和硬件工程师设计，提供类似串口调试助手的无线调试体验——涵盖实时 HEX/ASCII 双向通信、服务特征值树状解析、Notify 订阅、快捷命令管理、RSSI 信号历史图表、MTU 协商控制、特征值历史 Diff 对比、自定义协议插件执行和多格式日志导出等全套能力。
+**BLE 调试助手**是一款基于 UniApp + Vue3 开发的跨平台（Android / iOS）蓝牙低功耗调试工具。专为嵌入式开发者和硬件工程师设计，提供类似串口调试助手的无线调试体验——涵盖实时 HEX/ASCII 双向通信、服务特征值树状解析、Notify 订阅、快捷命令管理、RSSI 信号历史图表、MTU 协商控制、特征值历史 Diff 对比、自定义协议插件执行、多格式日志导出，以及**多设备同时调试**。
 
 应用内置**暗色/亮色双主题**和**中/英双语界面**，无需重启即可随时切换。
 
@@ -35,18 +35,19 @@
 ## 功能特性
 
 ### BLE 核心能力
-- **设备扫描** — 实时发现周边 BLE 广播包，配合雷达动效可视化
+- **设备扫描** — 实时发现周边 BLE 广播包，配合雷达动效可视化；已连接设备时扫描仍可继续
 - **智能过滤** — 支持按设备名称或 RSSI 信号阈值筛选设备
-- **服务特征值树** — 可展开的树状结构，属性标签一目了然（READ / WRITE / WRITE NR / NOTIFY / INDICATE）
+- **服务特征值树** — 多设备总览树，所有已连接设备的服务与特征值并列展示，属性标签一目了然（READ / WRITE / WRITE NR / NOTIFY / INDICATE）
 - **HEX / ASCII 双向通信** — 支持两种格式的数据收发，随时切换
 - **Notify 订阅** — 逐特征值开启/关闭 BLE 通知监听
 - **主动读取** — 按需触发特征值 Read 操作
 - **自动重连** — 支持断线自动重连和心跳保活机制
-- **MTU 协商** — 在设备页直接协商 MTU 大小（23–512 字节），实时显示协商结果
+- **MTU 协商** — 每设备独立协商 MTU 大小（23–512 字节），实时显示协商结果
+- **多设备同时调试** — 同时连接并调试多个 BLE 设备，每个设备拥有完全独立的日志缓冲区、服务树和通信状态
 
 ### 开发者体验
 - **快捷命令** — 保存常用指令并命名，长按删除；一键发送历史命令
-- **通信日志** — 带时间戳的 TX/RX/SYS 彩色日志，环形缓冲区最多保留 2000 条
+- **通信日志** — 带时间戳的 TX/RX/SYS 彩色日志，环形缓冲区最多保留 2000 条；每设备完全独立
 - **三种显示模式** — HEX 模式、ASCII 模式、DUAL 双显模式自由切换
 - **日志导出（TXT / CSV）** — 导出时选择纯文本格式或电子表格 CSV 格式，一键保存至本地
 - **协议解析** — 内置 RAW / UART 解析器；支持**自定义 JavaScript 协议插件**，自定义帧格式解析逻辑
@@ -59,7 +60,7 @@
 - **亮色主题** — 专业日间模式 (`#EDF2F7` 背景 + `#0369A1` 深蓝 + `#059669` 翠绿)
 - **主题切换** — 顶部按钮或设置面板即时切换，偏好持久化
 - **双语界面** — 完整中/英文界面，无缝切换，导航栏标题同步更新
-- **响应式布局** — 手机端上下堆叠；平板/横屏切换为左右分栏布局
+- **响应式布局** — 手机端上下堆叠；平板/横屏（≥768 px）切换为左右分栏布局，固定 60 px 左侧导航栏替代底部 TabBar
 
 ---
 
@@ -67,9 +68,9 @@
 
 > _左：暗色主题 · 右：亮色主题_
 
-| 扫描页 | 设备服务页 | 调试控制台 |
+| 扫描页 | 设备总览树 | 调试控制台 |
 |--------|-----------|-----------|
-| 雷达动效、RSSI 信号格、名称过滤 | 服务树 · MTU 协商面板 · RSSI 图表 | HEX/ASCII 收发 · 日志面板 · 协议插件 · Diff 历史 |
+| 雷达动效、RSSI 信号格、已连接标记 | 多设备树 · MTU 协商面板 · RSSI 图表 | 设备 Tab 切换 · HEX/ASCII 收发 · 日志面板 · 协议插件 |
 
 ---
 
@@ -79,11 +80,12 @@
 |------|---------|
 | 框架 | UniApp（Vue 3 + `<script setup>`） |
 | 语言 | TypeScript 5 |
-| 状态管理 | Pinia 2 |
-| BLE API | UniApp 原生 BLE API（Promise 化封装） |
-| 样式 | Scoped SCSS + CSS 自定义属性（双主题） |
-| 国际化 | 自研 `useI18n` composable（dot-notation key） |
-| 持久化 | `uni.setStorageSync`（设置、快捷命令、协议插件） |
+| 状态管理 | Pinia 2 — `bleStore`（会话 + 适配器）· `appStore`（主题/语言）· `protocolStore`（插件） |
+| BLE API | UniApp 原生 BLE API — Promise 化封装，每设备独立状态机 |
+| 样式 | Scoped SCSS + CSS 自定义属性（`.theme-dark` / `.theme-light` 双主题类） |
+| 响应式布局 | `useResponsive` composable — ≥768 px 使用 `LeftTabBar` 组件；窄屏保留原生底部 TabBar |
+| 国际化 | 自研 `useI18n` composable（dot-notation key，响应式语言切换） |
+| 持久化 | `uni.setStorageSync`（设置、快捷命令、协议插件、设备 PIN） |
 
 ---
 
@@ -138,32 +140,39 @@ npm run build:app
 uniapp-ble-debugging-assistant/
 │
 ├── pages/
-│   ├── scan/index.vue          # 设备扫描页（首页）
-│   ├── device/index.vue        # 服务树 · MTU 协商 · RSSI 信号图表
-│   ├── debug/index.vue         # BLE 通信调试控制台 · Diff 历史 · 协议插件
+│   ├── scan/index.vue          # 设备扫描页——发现设备，已连接设备带标记
+│   ├── device/index.vue        # 多设备总览树——所有会话的服务与特征值
+│   ├── debug/index.vue         # BLE 调试控制台——DeviceTabBar + 每会话独立面板
 │   └── protocol/index.vue      # 协议插件管理页（添加 / 编辑 / 启用）
 │
 ├── components/
-│   ├── DeviceItem.vue           # 扫描列表卡片（RSSI 信号格、可连接标签）
-│   ├── BleLogPanel.vue          # 通信日志查看器
+│   ├── DeviceTabBar.vue         # 已连接设备的横向 Tab 切换栏
+│   ├── DeviceItem.vue           # 扫描列表卡片（RSSI 信号格、已连接标记）
+│   ├── BleLogPanel.vue          # 通信日志查看器（每会话独立）
 │   ├── HexInput.vue             # HEX/ASCII 输入 + 快捷命令 + 发送
 │   ├── RadarScanAnimation.vue   # 雷达扫描动效（含设备点位）
-│   ├── RssiChart.vue            # RSSI 信号历史柱状图（已连接设备实时采集）
+│   ├── RssiChart.vue            # RSSI 信号历史柱状图
 │   ├── DiffModal.vue            # 特征值历史记录弹窗（逐字节 Diff 高亮）
+│   ├── LeftTabBar.vue           # ≥768 px 宽屏固定 60 px 左侧导航栏
 │   └── SettingsPanel.vue        # 底部弹出设置面板（主题 & 语言切换）
 │
 ├── services/
-│   └── bleManager.ts            # BLE 封装层（状态机、Promise API）
-│                                #   + getRSSI()  + negotiateMTU()
+│   └── bleManager.ts            # BLE 封装层
+│                                #   适配器状态机：UNINITIALIZED → IDLE ↔ SCANNING
+│                                #   每设备状态：Map<deviceId, CONNECTING|CONNECTED|DISCONNECTED>
+│                                #   + getRSSI(deviceId)  + negotiateMTU(deviceId, mtu)
 │
 ├── store/
-│   ├── bleStore.ts              # BLE 运行时状态（设备、日志、特征值）
-│   │                            #   + rssiHistory  + charValueHistory  + currentMtu
+│   ├── bleStore.ts              # BLE 运行时状态
+│   │                            #   sessions: Map<deviceId, DeviceSession>  ← 每设备独立数据
+│   │                            #   activeSessionId: string                  ← 驱动调试页渲染
+│   │                            #   + 适配器层（扫描设备、过滤、快捷命令、最近设备）
 │   ├── appStore.ts              # 应用设置状态（主题、语言、CSS 变量）
 │   └── protocolStore.ts         # 协议插件注册表（添加 / 执行 / 持久化）
 │
 ├── composables/
-│   └── useI18n.ts               # i18n composable — t('dot.notation.key')
+│   ├── useI18n.ts               # i18n composable — t('dot.notation.key')
+│   └── useResponsive.ts         # isWideScreen 响应式标志（window.width ≥ 768 px）
 │
 ├── locales/
 │   ├── zh.ts                    # 简体中文语言包
@@ -182,16 +191,67 @@ uniapp-ble-debugging-assistant/
 
 ## 架构设计
 
-### BLE 状态机
+### 数据流
 
 ```
-未初始化 → 就绪 → 扫描中 → 连接中 → 已连接 → 已断开
-           ↑                                    |
-           └────────────────────────────────────┘
-                        （自动重连）
+硬件 BLE 无线电
+  │
+  ▼
+uni BLE API 回调（onBLECharacteristicValueChange、onBLEConnectionStateChange …）
+  │
+  ▼
+bleManager  ── Promise API + 事件发射 ──▶  bleStore
+  │                                           │
+  │  onDataReceived(deviceId, ...)             ├── sessions.get(deviceId).logBuffer
+  │  onConnectionChange(deviceId, connected)  ├── sessions.get(deviceId).charValueHistory
+  │  onAdapterStateChange(adapterState)       └── adapterState（SCANNING / IDLE / …）
+  │
+  ▼
+页面 & 组件  ←  Pinia 响应式状态（自动重渲染）
 ```
 
-`bleManager.ts` 管理状态机并对外暴露 Promise 化 API，所有回调全部封装——页面和 Store 中无 callback hell。
+### BLE 适配器状态机
+
+```
+UNINITIALIZED ──openAdapter()──▶ IDLE ◀──▶ SCANNING
+                                   │
+                          （与扫描完全独立，并行运行）
+                                   ▼
+                     每设备：Map<deviceId, DeviceState>
+                       CONNECTING → CONNECTED → DISCONNECTED
+                                       ↑              │
+                                       └──（自动重连）─┘
+```
+
+`bleManager.ts` 同时管理两个层次。连接新设备**不会停止**正在进行的扫描——扫描与连接完全独立运行。
+
+### 多设备会话架构
+
+```
+bleStore
+  ├── sessions: Map<deviceId, DeviceSession>
+  │     DeviceSession {
+  │       device          BleDevice
+  │       deviceState     BleDeviceState
+  │       services        BleService[]
+  │       characteristics Map<serviceId, BleCharacteristic[]>
+  │       logBuffer       RingBuffer<LogEntry>   ← 独立缓冲区，2000 条
+  │       logs            LogEntry[]
+  │       rssiHistory     { time, rssi }[]        ← 独立，最多 60 个点
+  │       charValueHistory Record<charId, { time, hex }[]>
+  │       currentMtu      number
+  │       txBytes / rxBytes number
+  │       activeServiceId / activeCharacteristicId / notifyEnabled
+  │     }
+  │
+  ├── activeSessionId: string       ← 决定调试页显示哪个设备
+  │
+  └── 适配器层（共享）
+        adapterState、scannedDevices、filterName、filterMinRssi、
+        quickCommands、recentDevices、isConnecting、errorMessage
+```
+
+**活跃会话代理** — 调试页所有计算属性（`isConnected`、`logs`、`services`、`activeCharacteristic` 等）均从 `sessions.get(activeSessionId)` 读取。切换 Tab 只需更改 `activeSessionId`，无需任何重新初始化，即时反映另一设备的完整状态。
 
 ### 主题系统
 
@@ -204,6 +264,25 @@ App.vue（定义 .theme-dark / .theme-light 变量）
 ```
 
 `appStore` 同时导出 `cssVarsStyle`（内联 style 字符串），用于需要直接注入变量的特殊场景。
+
+### 响应式布局架构
+
+```
+useResponsive() composable
+  └── isWideScreen: boolean  （window.width ≥ 768 px，响应式监听）
+
+窄屏（<768 px）                     宽屏（≥768 px）
+───────────────────                 ─────────────────────────────────────
+原生底部 TabBar                      LeftTabBar.vue（60 px 固定左侧栏）
+单列堆叠布局                         双列 flex 布局（各页面独立比例）
+
+各页面分栏比例（宽屏）：
+  扫描页：  40% 左栏（雷达 + 控制）   /  60% 右栏（设备列表）
+  设备页：  35% 左栏（信息 + MTU + RSSI） /  65% 右栏（服务树）
+  调试页：  55% 左栏（日志面板）      /  45% 右栏（发送面板）
+```
+
+每个 Tab 页面条件渲染 `<LeftTabBar v-if="isWideScreen" />`，并在宽屏下加 `padding-left: 60px` 为侧边栏留位。
 
 ### 国际化系统
 
@@ -235,14 +314,6 @@ return {
 
 同一时刻只允许启用一个插件。管理入口：**调试页 → 协议解析 → 自定义 → 管理插件**。
 
-### RSSI 信号采集
-
-设备连接成功后，`bleStore` 每 **2 秒**自动调用 `bleManager.getRSSI()` 更新信号强度，并将结果追加至 `rssiHistory`（最多保留 60 个点）。`RssiChart` 组件响应式读取该数组，用 CSS 柱状图呈现趋势。断开连接时，轮询定时器自动清除。
-
-### 特征值历史 Diff
-
-每次 RX 数据到达时，`bleStore` 自动以特征值 UUID 为 key，将 HEX 字符串追加到 `charValueHistory`（每个特征值最多保留 50 条）。`DiffModal` 弹窗将历史条目倒序排列，逐字节对比相邻两条记录，变化字节以**橙黄色高亮**标注。
-
 ---
 
 ## 核心 API 参考
@@ -251,19 +322,23 @@ return {
 
 | 方法 | 说明 |
 |------|------|
-| `init()` | 打开蓝牙适配器，设置状态与设备监听器 |
-| `startDiscovery(timeout?)` | 开始 BLE 扫描，可设超时时间 |
-| `stopDiscovery()` | 停止 BLE 扫描 |
-| `connect(deviceId)` | 建立 BLE 连接 |
-| `disconnect(deviceId)` | 断开 BLE 连接 |
+| `openAdapter()` | 打开蓝牙适配器，设置状态与设备监听器 |
+| `startScan(options?)` | 开始 BLE 扫描，可设超时时间；已连接设备时可安全调用 |
+| `stopScan()` | 停止 BLE 扫描 |
+| `connect(deviceId)` | 建立 BLE 连接（不会停止进行中的扫描） |
+| `disconnect(deviceId)` | 断开指定设备的 BLE 连接 |
 | `getServices(deviceId)` | 获取全部服务 |
 | `getCharacteristics(deviceId, serviceId)` | 获取特征值列表 |
 | `write(deviceId, serviceId, charId, buffer)` | 向特征值写入数据 |
-| `read(deviceId, serviceId, charId)` | 读取特征值当前值 |
+| `readCharacteristic(deviceId, serviceId, charId)` | 读取特征值当前值 |
 | `setNotify(deviceId, serviceId, charId, enable)` | 开启/关闭 BLE 通知 |
 | `getRSSI(deviceId)` | 查询已连接设备的当前 RSSI 信号强度 |
-| `negotiateMTU(mtu)` | 发起 MTU 协商请求（23–512），返回实际协商结果 |
-| `onData(listener)` | 订阅特征值数据变化 |
+| `negotiateMTU(deviceId, mtu)` | 发起 MTU 协商请求（23–512），返回实际协商结果 |
+| `getConnectedDeviceIds()` | 返回所有已连接设备 ID 的 `Set<string>` |
+| `getDeviceState(deviceId)` | 返回指定设备的连接状态 |
+| `onAdapterStateChange(fn)` | 订阅适配器状态变化（UNINITIALIZED / IDLE / SCANNING） |
+| `onDeviceStateChange(fn)` | 订阅每设备连接状态变化 |
+| `onDataReceived(fn)` | 订阅特征值数据变化 |
 
 ### `utils/hex.ts`
 
@@ -373,22 +448,14 @@ return {
 **Q: 协议插件运行出错？**
 > 插件代码在沙盒 `new Function()` 中执行。出错时字段列表会显示 `Error: <错误信息>`，便于定位问题。注意函数体最后需要有 `return` 语句。
 
+**Q: 同时连接多少个设备合适？**
+> 没有硬性限制，但手机蓝牙栈通常同时稳定维持 3–5 个连接。连接 3 个及以上时应用会给出提示，建议在实际设备上测试稳定性。
+
 **Q: 日志显示乱码？**
 > 切换到 HEX 模式查看原始字节；ASCII 模式下不可打印字符会显示为 `.`。
 
 **Q: 如何保存常用发送命令？**
 > 在调试页输入数据后，点击「+ 保存为快捷命令」输入名称即可；下次发送只需点击命令按钮。
-
----
-
-## 未来计划
-
-- [x] BLE 信号强度图表（RSSI 时序曲线）— _v1.1.0_
-- [x] 自定义协议解析插件机制 — _v1.1.0_
-- [x] MTU 协商控制 — _v1.1.0_
-- [x] 特征值历史值 Diff 对比 — _v1.1.0_
-- [x] 日志 CSV 格式导出 — _v1.1.0_
-- [ ] 批量多设备同时调试
 
 ---
 

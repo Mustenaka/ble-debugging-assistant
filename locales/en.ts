@@ -43,6 +43,17 @@ export const en: I18nKeys = {
     debug: 'Debug',
   },
 
+  multiDevice: {
+    connectedDevices: 'Connected Devices',
+    addDevice: 'Add Device',
+    noSessions: 'No connections. Tap + to scan and add a device.',
+    tooManyWarning: 'Too many simultaneous connections may be unstable. 3 or fewer is recommended.',
+    alreadyConnected: 'Connected',
+    switchTo: 'Switch to this device',
+    disconnectDevice: 'Disconnect this device',
+    goToDebug: 'Go to Debug',
+  },
+
   status: {
     uninitialized: 'Uninitialized',
     idle: 'Ready',
@@ -86,7 +97,7 @@ export const en: I18nKeys = {
   },
 
   device: {
-    pageTitle: 'Device Services',
+    pageTitle: 'Device Overview',
     disconnect: 'Disconnect',
     disconnectTitle: 'Disconnect',
     disconnectConfirm: 'Disconnect from',

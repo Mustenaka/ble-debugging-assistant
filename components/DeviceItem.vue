@@ -18,7 +18,10 @@
     <view class="device-info">
       <view class="device-name-row">
         <text class="device-name">{{ displayName }}</text>
-        <view v-if="device.connectable !== false" class="connectable-badge">
+        <view v-if="isAlreadyConnected" class="connected-badge">
+          <text class="connected-badge-text">{{ alreadyConnectedLabel }}</text>
+        </view>
+        <view v-else-if="device.connectable !== false" class="connectable-badge">
           <text class="connectable-text">{{ connectableLabel }}</text>
         </view>
         <view v-if="hasPinConfig" class="pin-badge">
@@ -63,7 +66,9 @@ import { rssiToLevel, rssiToColor, shortUUID } from '../utils/hex'
 const props = defineProps<{
   device: BleDevice
   isConnecting?: boolean
+  isAlreadyConnected?: boolean
   connectableLabel?: string
+  alreadyConnectedLabel?: string
   unknownLabel?: string
   hasPinConfig?: boolean
 }>()
@@ -127,6 +132,8 @@ onUnmounted(() => { if (pulseTimer) clearInterval(pulseTimer) })
 .device-name { font-size: 15px; font-weight: 600; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
 .connectable-badge { background: rgba(var(--color-accent-rgb), 0.12); border: 1px solid rgba(var(--color-accent-rgb), 0.3); border-radius: 4px; padding: 1px 6px; flex-shrink: 0; }
 .connectable-text { font-size: 10px; color: var(--color-accent); font-weight: 600; }
+.connected-badge { background: rgba(var(--color-primary-rgb), 0.15); border: 1px solid rgba(var(--color-primary-rgb), 0.4); border-radius: 4px; padding: 1px 6px; flex-shrink: 0; }
+.connected-badge-text { font-size: 10px; color: var(--color-primary); font-weight: 700; }
 .device-id { font-size: 11px; color: var(--text-dimmed); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .service-uuids { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }

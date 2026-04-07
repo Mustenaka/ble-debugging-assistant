@@ -41,6 +41,17 @@ export const zh = {
     debug: '调试',
   },
 
+  multiDevice: {
+    connectedDevices: '已连接设备',
+    addDevice: '添加设备',
+    noSessions: '暂无连接，点击 + 扫描添加设备',
+    tooManyWarning: '同时连接设备过多可能不稳定，建议不超过 3 个',
+    alreadyConnected: '已连接',
+    switchTo: '切换至此设备',
+    disconnectDevice: '断开此设备',
+    goToDebug: '前往调试',
+  },
+
   status: {
     uninitialized: '未初始化',
     idle: '就绪',
@@ -84,7 +95,7 @@ export const zh = {
   },
 
   device: {
-    pageTitle: '设备服务',
+    pageTitle: '设备总览',
     disconnect: '断开',
     disconnectTitle: '断开连接',
     disconnectConfirm: '确认断开与',

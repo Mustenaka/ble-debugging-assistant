@@ -8,7 +8,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178c6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
 [![Pinia](https://img.shields.io/badge/Pinia-2.x-ffd859?style=flat-square)](https://pinia.vuejs.org/)
 [![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS-lightgrey?style=flat-square)](https://uniapp.dcloud.net.cn/)
-[![Version](https://img.shields.io/badge/Version-1.1.0-00F5FF?style=flat-square)](#)
+[![Version](https://img.shields.io/badge/Version-1.2.0-00F5FF?style=flat-square)](#)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](#)
 
 [中文文档](./README_Zh.md) · [Features](#features) · [Quick Start](#quick-start) · [Architecture](#architecture) · [Screenshots](#screenshots)
@@ -19,7 +19,7 @@
 
 ## Overview
 
-**BLE Debugger** is a cross-platform (Android / iOS) Bluetooth Low Energy debugging assistant built with UniApp + Vue3. Designed for embedded engineers and hardware developers, it delivers a serial-tool-like experience for wireless debugging — complete with real-time HEX/ASCII communication, service tree inspection, notify subscriptions, quick command management, RSSI signal charts, MTU negotiation, characteristic value diff history, custom protocol plugin execution, and multi-format log export.
+**BLE Debugger** is a cross-platform (Android / iOS) Bluetooth Low Energy debugging assistant built with UniApp + Vue3. Designed for embedded engineers and hardware developers, it delivers a serial-tool-like experience for wireless debugging — complete with real-time HEX/ASCII communication, service tree inspection, notify subscriptions, quick command management, RSSI signal charts, MTU negotiation, characteristic value diff history, custom protocol plugin execution, multi-format log export, and **simultaneous multi-device debugging**.
 
 The app ships with two display themes (Dark / Light) and full bilingual support (Chinese / English), switchable at any time without restarting.
 
@@ -35,20 +35,21 @@ The app ships with two display themes (Dark / Light) and full bilingual support 
 ## Features
 
 ### Core BLE Capabilities
-- **Device Scanning** — Real-time BLE advertisement discovery with radar animation
+- **Device Scanning** — Real-time BLE advertisement discovery with radar animation; scanning stays active even while devices are connected
 - **Smart Filtering** — Filter by device name or minimum RSSI threshold
-- **Service & Characteristic Tree** — Visual expandable tree with property badges (READ / WRITE / WRITE NR / NOTIFY / INDICATE)
+- **Service & Characteristic Tree** — Multi-device tree view showing all connected devices' services and characteristics with property badges (READ / WRITE / WRITE NR / NOTIFY / INDICATE)
 - **HEX / ASCII Communication** — Full duplex send & receive with format switching
 - **Notify Subscriptions** — Toggle BLE notifications per characteristic
 - **Read on Demand** — Trigger explicit characteristic reads
 - **Auto-Reconnect** — Automatic reconnection with configurable heartbeat keep-alive
-- **MTU Negotiation** — Negotiate MTU size (23–512 bytes) directly from the device page with real-time feedback
+- **MTU Negotiation** — Negotiate MTU size (23–512 bytes) per device with real-time feedback
+- **Multi-Device Simultaneous Debugging** — Connect and debug multiple BLE devices at the same time; each device has its own isolated log buffer, service tree, and communication state
 
 ### Developer Experience
 - **Quick Commands** — Save frequently used payloads with custom names; long-press to delete
-- **Communication Log** — Timestamped, color-coded TX/RX/SYS entries with 2000-entry ring buffer
+- **Communication Log** — Timestamped, color-coded TX/RX/SYS entries with 2000-entry ring buffer; fully isolated per connected device
 - **Dual Display Mode** — View data in HEX, ASCII, or DUAL mode simultaneously
-- **Log Export (TXT / CSV)** — Export session logs in plain text or spreadsheet-ready CSV format; format selected at export time
+- **Log Export (TXT / CSV)** — Export session logs in plain text or spreadsheet-ready CSV format
 - **Protocol Analysis** — Built-in RAW / UART parser; **custom JavaScript plugin system** for user-defined frame parsers
 - **RSSI Signal Chart** — Live bar chart of received signal strength over time, polled every 2 s while connected
 - **Characteristic Value Diff** — Per-characteristic history of received values with byte-level change highlighting
@@ -59,7 +60,7 @@ The app ships with two display themes (Dark / Light) and full bilingual support 
 - **Light Theme** — Professional daylight mode (`#EDF2F7` + `#0369A1` blue + `#059669` green)
 - **Theme Toggle** — Instant switch via header buttons or Settings panel; preference persisted
 - **Bilingual** — Full Chinese / English interface; instant switching, nav bar title synced
-- **Responsive Layout** — Stacked on phones; side-by-side panel layout on tablets / landscape
+- **Responsive Layout** — Stacked on phones; side-by-side panel layout on tablets / landscape (≥768 px) with a fixed 60 px left sidebar replacing the bottom tab bar
 
 ---
 
@@ -67,9 +68,9 @@ The app ships with two display themes (Dark / Light) and full bilingual support 
 
 > _Dark theme on the left · Light theme on the right_
 
-| Scan | Device Services | Debug Console |
+| Scan | Device Overview | Debug Console |
 |------|----------------|---------------|
-| Radar animation, RSSI bars, filter | Service tree · MTU panel · RSSI chart | HEX/ASCII I/O · log panel · protocol parser · diff history |
+| Radar animation, RSSI bars, connected badges | Multi-device tree · MTU panel · RSSI chart | Device tabs · HEX/ASCII I/O · log panel · protocol parser |
 
 ---
 
@@ -79,11 +80,12 @@ The app ships with two display themes (Dark / Light) and full bilingual support 
 |-------|-----------|
 | Framework | UniApp (Vue 3 + `<script setup>`) |
 | Language | TypeScript 5 |
-| State Management | Pinia 2 |
-| BLE API | UniApp native BLE APIs (Promise-wrapped) |
-| Styling | Scoped SCSS + CSS Custom Properties (dual theme) |
-| i18n | Custom `useI18n` composable (dot-notation keys) |
-| Storage | `uni.setStorageSync` for settings, quick commands & plugins |
+| State Management | Pinia 2 — `bleStore` (sessions + adapter) · `appStore` (theme/locale) · `protocolStore` (plugins) |
+| BLE API | UniApp native BLE APIs — Promise-wrapped, per-device state machine |
+| Styling | Scoped SCSS + CSS Custom Properties (dual theme via `.theme-dark` / `.theme-light` classes) |
+| Responsive Layout | `useResponsive` composable — `LeftTabBar` component for ≥768 px; native bottom tab bar for narrow screens |
+| i18n | Custom `useI18n` composable (dot-notation keys, reactive locale switching) |
+| Storage | `uni.setStorageSync` for settings, quick commands, plugins & device pins |
 
 ---
 
@@ -138,32 +140,39 @@ npm run build:app
 uniapp-ble-debugging-assistant/
 │
 ├── pages/
-│   ├── scan/index.vue          # Device scan page (home)
-│   ├── device/index.vue        # Service tree · MTU negotiation · RSSI chart
-│   ├── debug/index.vue         # BLE communication console · diff history · protocol plugin
+│   ├── scan/index.vue          # Device scan page — finds devices, marks already-connected ones
+│   ├── device/index.vue        # Multi-device tree overview — all sessions' services & characteristics
+│   ├── debug/index.vue         # BLE debug console — DeviceTabBar + per-session log & send panel
 │   └── protocol/index.vue      # Protocol plugin management (add / edit / enable)
 │
 ├── components/
-│   ├── DeviceItem.vue           # Scan list card (RSSI bars, connectable badge)
-│   ├── BleLogPanel.vue          # Communication log viewer
+│   ├── DeviceTabBar.vue         # Horizontal tab bar for switching between connected device sessions
+│   ├── DeviceItem.vue           # Scan list card (RSSI bars, connectable badge, connected indicator)
+│   ├── BleLogPanel.vue          # Communication log viewer (per-session)
 │   ├── HexInput.vue             # HEX/ASCII input + quick commands + send
 │   ├── RadarScanAnimation.vue   # Animated radar with device dots
 │   ├── RssiChart.vue            # Live RSSI bar chart (connected device signal history)
 │   ├── DiffModal.vue            # Characteristic value history with byte-level diff highlight
+│   ├── LeftTabBar.vue           # Fixed 60 px left sidebar for ≥768 px screens
 │   └── SettingsPanel.vue        # Bottom-sheet: theme & language switcher
 │
 ├── services/
-│   └── bleManager.ts            # BLE abstraction layer (state machine, Promise API)
-│                                #   + getRSSI()  + negotiateMTU()
+│   └── bleManager.ts            # BLE abstraction layer
+│                                #   Adapter state machine: UNINITIALIZED → IDLE ↔ SCANNING
+│                                #   Per-device state: Map<deviceId, CONNECTING|CONNECTED|DISCONNECTED>
+│                                #   + getRSSI(deviceId)  + negotiateMTU(deviceId, mtu)
 │
 ├── store/
-│   ├── bleStore.ts              # BLE runtime state (devices, logs, characteristics)
-│   │                            #   + rssiHistory  + charValueHistory  + currentMtu
+│   ├── bleStore.ts              # BLE runtime state
+│   │                            #   sessions: Map<deviceId, DeviceSession>  ← isolated per device
+│   │                            #   activeSessionId: string                  ← drives debug page
+│   │                            #   + adapter state (scannedDevices, scanning, filters)
 │   ├── appStore.ts              # App settings state (theme, locale, CSS variables)
 │   └── protocolStore.ts         # Protocol plugin registry (add / run / persist)
 │
 ├── composables/
-│   └── useI18n.ts               # i18n composable — t('dot.notation.key')
+│   ├── useI18n.ts               # i18n composable — t('dot.notation.key')
+│   └── useResponsive.ts         # isWideScreen reactive flag (window.width ≥ 768 px)
 │
 ├── locales/
 │   ├── zh.ts                    # Simplified Chinese strings
@@ -182,16 +191,67 @@ uniapp-ble-debugging-assistant/
 
 ## Architecture
 
-### BLE State Machine
+### Data Flow
 
 ```
-UNINITIALIZED → IDLE → SCANNING → CONNECTING → CONNECTED → DISCONNECTED
-                 ↑                                               |
-                 └───────────────────────────────────────────────┘
-                               (auto-reconnect)
+Hardware BLE Radio
+  │
+  ▼
+uni BLE API callbacks (onBLECharacteristicValueChange, onBLEConnectionStateChange, ...)
+  │
+  ▼
+bleManager  ── Promise-based API + event emitters ──▶  bleStore
+  │                                                        │
+  │  onDataReceived(deviceId, svcId, charId, value)        ├── sessions.get(deviceId).logBuffer
+  │  onConnectionChange(deviceId, connected)               ├── sessions.get(deviceId).charValueHistory
+  │  onAdapterStateChange(adapterState)                    └── adapterState (SCANNING / IDLE / ...)
+  │
+  ▼
+Pages & Components  ←  reactive Pinia state (auto re-render)
 ```
 
-`bleManager.ts` owns the state machine and exposes a Promise-based API. All callbacks are converted — no callback hell in pages or stores.
+### BLE Adapter State Machine
+
+```
+UNINITIALIZED ──openAdapter()──▶ IDLE ◀──▶ SCANNING
+                                  │
+                            (parallel, independent of scanning)
+                                  ▼
+                     Per-device: Map<deviceId, DeviceState>
+                       CONNECTING → CONNECTED → DISCONNECTED
+                                        ↑              │
+                                        └──(reconnect)─┘
+```
+
+`bleManager.ts` owns both layers. Connecting a new device does **not** stop an active scan — scanning and connections are fully independent.
+
+### Multi-Device Session Architecture
+
+```
+bleStore
+  ├── sessions: Map<deviceId, DeviceSession>
+  │     DeviceSession {
+  │       device          BleDevice
+  │       deviceState     BleDeviceState
+  │       services        BleService[]
+  │       characteristics Map<serviceId, BleCharacteristic[]>
+  │       logBuffer       RingBuffer<LogEntry>   ← isolated, 2000 entries
+  │       logs            LogEntry[]
+  │       rssiHistory     { time, rssi }[]        ← isolated, 60 points
+  │       charValueHistory Record<charId, { time, hex }[]>
+  │       currentMtu      number
+  │       txBytes / rxBytes number
+  │       activeServiceId / activeCharacteristicId / notifyEnabled
+  │     }
+  │
+  ├── activeSessionId: string       ← which tab is shown in debug page
+  │
+  └── Adapter-level (shared)
+        adapterState, scannedDevices, filterName, filterMinRssi,
+        quickCommands, recentDevices, isConnecting, errorMessage
+```
+
+**Active session proxy** — all debug page computed properties (`isConnected`, `logs`, `services`, `activeCharacteristic`, …) read from `sessions.get(activeSessionId)`. Switching tabs by changing `activeSessionId` instantly reflects a different device's state with zero re-initialization.
 
 ### Theme System
 
@@ -205,16 +265,35 @@ App.vue (defines .theme-dark / .theme-light vars)
 
 `appStore` also exports `cssVarsStyle` (inline style string) for components that need direct variable injection.
 
+### Responsive Layout Architecture
+
+```
+useResponsive() composable
+  └── isWideScreen: boolean  (window.width ≥ 768 px, reactive via ResizeObserver / onLoad)
+
+Narrow (<768 px)                    Wide (≥768 px)
+─────────────────                   ──────────────────────────────────
+Native bottom TabBar                LeftTabBar.vue (60 px fixed sidebar)
+Single-column layout                Two-column flex layout (page-specific ratios)
+
+Page split ratios (wide):
+  Scan page:    40% left (radar + controls)   /  60% right (device list)
+  Device page:  35% left (info + MTU + RSSI)  /  65% right (service tree)
+  Debug page:   55% left (log panel)          /  45% right (send panel)
+```
+
+Each tab page conditionally renders `<LeftTabBar v-if="isWideScreen" />` and applies `padding-left: 60px` so content clears the sidebar.
+
 ### i18n System
 
 ```ts
 // composables/useI18n.ts
 const { t } = useI18n()
-t('scan.startScan')   // → '开始扫描' | 'Start Scan'
-t('debug.bytes')      // → '字节'     | 'bytes'
+t('scan.startScan')   // → 'Start Scan'  |  '开始扫描'
+t('debug.bytes')      // → 'bytes'       |  '字节'
 ```
 
-Switching `appStore.locale` between `'zh'` and `'en'` is reactive and updates all `t()` calls instantly.
+Switching `appStore.locale` between `'zh'` and `'en'` is reactive and updates all `t()` calls instantly. Nav bar titles are synced via `watch`.
 
 ### Protocol Plugin System
 
@@ -233,7 +312,7 @@ return {
 };
 ```
 
-Plugins are executed via `new Function()` in `protocolStore.runPlugin()`. Only one plugin can be enabled at a time. Manage plugins at **Debug → Protocol → Custom → Manage Plugins**.
+Plugins are executed via `new Function()` in `protocolStore.runPlugin()`. Only one plugin can be enabled at a time.
 
 ---
 
@@ -243,19 +322,23 @@ Plugins are executed via `new Function()` in `protocolStore.runPlugin()`. Only o
 
 | Method | Description |
 |--------|-------------|
-| `init()` | Open Bluetooth adapter; sets up state & device listeners |
-| `startDiscovery(timeout?)` | Start BLE scan with optional timeout |
-| `stopDiscovery()` | Stop BLE scan |
-| `connect(deviceId)` | Create BLE connection |
-| `disconnect(deviceId)` | Destroy BLE connection |
+| `openAdapter()` | Open Bluetooth adapter; sets up state & device listeners |
+| `startScan(options?)` | Start BLE scan with optional timeout; safe to call while devices are connected |
+| `stopScan()` | Stop BLE scan |
+| `connect(deviceId)` | Establish BLE connection (does not stop ongoing scan) |
+| `disconnect(deviceId)` | Destroy BLE connection for a specific device |
 | `getServices(deviceId)` | Retrieve all services |
 | `getCharacteristics(deviceId, serviceId)` | Retrieve characteristics |
 | `write(deviceId, serviceId, charId, buffer)` | Write data to characteristic |
-| `read(deviceId, serviceId, charId)` | Read characteristic value |
+| `readCharacteristic(deviceId, serviceId, charId)` | Read characteristic value |
 | `setNotify(deviceId, serviceId, charId, enable)` | Toggle BLE notifications |
 | `getRSSI(deviceId)` | Query current RSSI of connected device |
-| `negotiateMTU(mtu)` | Request MTU negotiation (23–512); returns actual MTU |
-| `onData(listener)` | Subscribe to incoming characteristic data |
+| `negotiateMTU(deviceId, mtu)` | Request MTU negotiation (23–512); returns actual MTU |
+| `getConnectedDeviceIds()` | Returns `Set<string>` of all currently connected device IDs |
+| `getDeviceState(deviceId)` | Returns per-device connection state |
+| `onAdapterStateChange(fn)` | Subscribe to adapter state changes (UNINITIALIZED / IDLE / SCANNING) |
+| `onDeviceStateChange(fn)` | Subscribe to per-device state changes |
+| `onDataReceived(fn)` | Subscribe to incoming characteristic data |
 
 ### `utils/hex.ts`
 
@@ -322,14 +405,25 @@ All settings survive app restarts via `uni.setStorageSync`.
 
 ---
 
-## Roadmap
+## Permissions
 
-- [x] BLE signal strength chart (RSSI over time) — _v1.1.0_
-- [x] Custom protocol parser plugin system — _v1.1.0_
-- [x] MTU negotiation control — _v1.1.0_
-- [x] Characteristic value history diff view — _v1.1.0_
-- [x] Export logs as CSV — _v1.1.0_
-- [ ] Multi-device simultaneous debugging
+### Android
+
+| Permission | Purpose |
+|------------|---------|
+| `BLUETOOTH` / `BLUETOOTH_ADMIN` | Basic Bluetooth control (API < 31) |
+| `BLUETOOTH_SCAN` | BLE device scanning (API 31+) |
+| `BLUETOOTH_CONNECT` | BLE device connection (API 31+) |
+| `ACCESS_FINE_LOCATION` | Required for BLE scanning |
+| `WRITE_EXTERNAL_STORAGE` | Log file export |
+
+### iOS
+
+| Permission | Purpose |
+|------------|---------|
+| `NSBluetoothAlwaysUsageDescription` | BLE scanning and connection |
+| `NSBluetoothPeripheralUsageDescription` | Peripheral data communication |
+| `NSLocationWhenInUseUsageDescription` | BLE scanning location requirement |
 
 ---
 
