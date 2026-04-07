@@ -4,6 +4,9 @@
     <!-- 宽屏左侧导航栏 -->
     <LeftTabBar v-if="isWideScreen" current-path="/pages/debug/index" />
 
+    <!-- 设备 Tab 切换栏 -->
+    <DeviceTabBar @add="goToScan" @close="handleTabClose" />
+
     <!-- 顶部状态栏 -->
     <view class="debug-header">
       <view class="header-left">
@@ -214,6 +217,7 @@ import HexInput from '../../components/HexInput.vue'
 import SettingsPanel from '../../components/SettingsPanel.vue'
 import DiffModal from '../../components/DiffModal.vue'
 import LeftTabBar from '../../components/LeftTabBar.vue'
+import DeviceTabBar from '../../components/DeviceTabBar.vue'
 
 const bleStore = useBleStore()
 const appStore = useAppStore()
@@ -298,12 +302,13 @@ async function toggleNotify() {
 
 async function handleReadChar() {
   showMoreMenu.value = false
-  if (!bleStore.connectedDevice || !bleStore.activeServiceId || !bleStore.activeCharacteristicId) {
+  const session = bleStore.activeSession
+  if (!session || !session.activeServiceId || !session.activeCharacteristicId) {
     uni.showToast({ title: t('debug.noCharTip'), icon: 'none' }); return
   }
   try {
     const { bleManager } = await import('../../services/bleManager')
-    await bleManager.readCharacteristic(bleStore.connectedDevice.deviceId, bleStore.activeServiceId, bleStore.activeCharacteristicId)
+    await bleManager.readCharacteristic(session.device.deviceId, session.activeServiceId, session.activeCharacteristicId)
     bleStore.addSysLog(t('debug.readComplete'))
   } catch (e: any) { uni.showToast({ title: e.message ?? t('debug.readFailed'), icon: 'none' }) }
 }
@@ -435,8 +440,19 @@ function goToProtocolManage() {
 
 async function handleDisconnect() {
   showMoreMenu.value = false
-  await bleStore.disconnectDevice()
-  uni.navigateBack()
+  const deviceId = bleStore.activeSessionId
+  await bleStore.disconnectDevice(deviceId)
+  // 若还有其他会话则留在调试页，否则返回
+  if (!bleStore.hasConnections) uni.navigateBack()
+}
+
+async function handleTabClose(deviceId: string) {
+  await bleStore.disconnectDevice(deviceId)
+  if (!bleStore.hasConnections) uni.navigateBack()
+}
+
+function goToScan() {
+  uni.switchTab({ url: '/pages/scan/index' })
 }
 
 function openSettings() { showMoreMenu.value = false; showSettings.value = true }
