@@ -2,14 +2,19 @@
     "name" : "BLE 调试助手",
     "appid" : "__UNI__6C47F44",
     "description" : "专业蓝牙低功耗(BLE)调试工具，面向硬件工程师和嵌入式开发者",
-    "versionName" : "0.1.1",
-    "versionCode" : 101,
+    "versionName" : "0.1.2",
+    "versionCode" : 102,
     "transformPx" : false,
     "app-plus" : {
         "usingComponents" : true,
         "nvueStyleCompiler" : "uni-app",
         "compilerVersion" : 3,
-        "screenOrientation" : [ "portrait-primary", "landscape-primary", "landscape-secondary" ],
+        "screenOrientation" : [
+            "portrait-primary",
+            "portrait-secondary",
+            "landscape-primary",
+            "landscape-secondary"
+        ],
         "splashscreen" : {
             "alwaysShowBeforeRender" : true,
             "waiting" : true,
