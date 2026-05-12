@@ -132,6 +132,9 @@ export const zh = {
       fmtTxt: '文本 TXT',
       fmtMd: 'Markdown',
       fmtCsv: '表格 CSV',
+      fmtAiMd: 'AI 报告',
+      fmtSpecJson: '协议 JSON',
+      fmtMockJson: 'Mock JSON',
       confirm: '导出',
       loadingChars: '正在加载所有特征值...',
       success: '导出成功',
@@ -185,6 +188,8 @@ export const zh = {
     bytes: 'bytes',
     charHistory: '特征值历史',
     noHistory: '暂无历史数据',
+    sampleSaved: '已保存为协议样例',
+    sampleSaveFailed: '此日志无法保存为样例',
     moreMenu: {
       read: '读取特征值',
       export: '导出日志',

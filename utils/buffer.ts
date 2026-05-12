@@ -2,7 +2,7 @@
  * Buffer / 日志相关工具
  */
 
-import { bufToHex, bufToAscii } from './hex'
+import { bufToHex, bufToAscii, shortUUID } from './hex'
 
 export type LogDirection = 'TX' | 'RX' | 'SYS'
 
@@ -14,6 +14,10 @@ export interface LogEntry {
   ascii: string
   rawLength: number
   label?: string
+  serviceUUID?: string
+  characteristicUUID?: string
+  operationId?: string
+  decodedFields?: { name: string; value: string }[]
 }
 
 let logIdCounter = 0
@@ -49,7 +53,11 @@ export function formatTimestamp(ts: number, showDate = false): string {
 export function logEntryToText(entry: LogEntry): string {
   const ts = formatTimestamp(entry.timestamp, true)
   const dir = entry.direction.padEnd(3)
-  const label = entry.label ? ` [${entry.label}]` : ''
+  const endpoint = entry.serviceUUID && entry.characteristicUUID
+    ? `${shortUUID(entry.serviceUUID)} / ${shortUUID(entry.characteristicUUID)}`
+    : ''
+  const labelValue = entry.label || endpoint
+  const label = labelValue ? ` [${labelValue}]` : ''
   return `[${ts}] ${dir}${label} HEX: ${entry.hex}  ASCII: ${entry.ascii}`
 }
 
@@ -86,7 +94,7 @@ export function exportLogsToCSV(logs: LogEntry[], device: ExportDeviceInfo | str
     `# 日志条数,${logs.length}`,
     '',
   ].join('\n')
-  const header = ['Time', 'Direction', 'HEX', 'ASCII', 'Bytes', 'Label'].join(',')
+  const header = ['Time', 'Direction', 'HEX', 'ASCII', 'Bytes', 'Label', 'Service UUID', 'Characteristic UUID', 'Operation ID'].join(',')
   const rows = logs.map((e) => [
     formatTimestamp(e.timestamp, true),
     e.direction,
@@ -94,6 +102,9 @@ export function exportLogsToCSV(logs: LogEntry[], device: ExportDeviceInfo | str
     esc(e.ascii),
     String(e.rawLength),
     esc(e.label ?? ''),
+    esc(e.serviceUUID ?? ''),
+    esc(e.characteristicUUID ?? ''),
+    esc(e.operationId ?? ''),
   ].join(','))
   return meta + [header, ...rows].join('\n')
 }
@@ -301,13 +312,63 @@ export interface DeviceReportInfo {
   notes?: string
 }
 
-export function buildDeviceReportFilename(deviceName: string, ext: 'txt' | 'md' | 'csv'): string {
+export function buildDeviceReportFilename(deviceName: string, ext: 'txt' | 'md' | 'csv' | 'json'): string {
   const now = new Date()
   const pad = (n: number) => n.toString().padStart(2, '0')
   const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
   const time = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
   const safeName = (deviceName || 'Unknown').replace(/[^\w\u4e00-\u9fa5]/g, '_').slice(0, 20)
   return `BLE_DeviceReport_${safeName}_${date}_${time}.${ext}`
+}
+
+// ─── 协议样例持久化 ──────────────────────────────────────────────────────────
+
+export interface BleProtocolSample {
+  id: string
+  deviceId: string
+  serviceUUID: string
+  characteristicUUID: string
+  direction: Extract<LogDirection, 'TX' | 'RX'>
+  name: string
+  hex: string
+  ascii: string
+  rawLength: number
+  timestamp: number
+  sourceLogId?: string
+  operationId?: string
+}
+
+const PROTOCOL_SAMPLES_KEY = 'ble_protocol_samples'
+
+function loadAllProtocolSamples(): Record<string, BleProtocolSample[]> {
+  try {
+    const raw = uni.getStorageSync(PROTOCOL_SAMPLES_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveAllProtocolSamples(all: Record<string, BleProtocolSample[]>): void {
+  uni.setStorageSync(PROTOCOL_SAMPLES_KEY, JSON.stringify(all))
+}
+
+export function loadProtocolSamples(deviceId: string): BleProtocolSample[] {
+  return loadAllProtocolSamples()[deviceId] ?? []
+}
+
+export function saveProtocolSample(sample: BleProtocolSample): BleProtocolSample[] {
+  const all = loadAllProtocolSamples()
+  const list = [sample, ...(all[sample.deviceId] ?? []).filter((s) => s.id !== sample.id)]
+  all[sample.deviceId] = list.slice(0, 100)
+  saveAllProtocolSamples(all)
+  return all[sample.deviceId]
+}
+
+export function clearProtocolSamples(deviceId: string): void {
+  const all = loadAllProtocolSamples()
+  delete all[deviceId]
+  saveAllProtocolSamples(all)
 }
 
 function propsLabel(p: DeviceCharExport['properties']): string {

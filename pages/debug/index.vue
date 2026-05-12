@@ -71,6 +71,7 @@
           :new-msg-text="t('log.newMessages')"
           @clear="bleStore.clearLogs()"
           @export="handleExportLog"
+          @save-sample="handleSaveLogSample"
         />
       </view>
 
@@ -467,6 +468,15 @@ function confirmSaveQuick() {
   bleStore.addQuickCommand({ name: quickCmdName.value.trim(), data: pendingQuickData.value!.data, mode: pendingQuickData.value!.mode })
   showSaveQuickDialog.value = false
   uni.showToast({ title: t('debug.saved'), icon: 'success' })
+}
+
+function handleSaveLogSample(entry: any) {
+  const saved = bleStore.saveLogAsProtocolSample(entry.id)
+  if (!saved) {
+    uni.showToast({ title: t('debug.sampleSaveFailed'), icon: 'none' })
+    return
+  }
+  uni.showToast({ title: t('debug.sampleSaved'), icon: 'success', duration: 1200 })
 }
 
 function goToDevice() { uni.switchTab({ url: '/pages/device/index' }) }

@@ -52,6 +52,7 @@
           :key="entry.id"
           class="log-entry"
           :class="`log-entry--${entry.direction.toLowerCase()}`"
+          @longpress="$emit('save-sample', entry)"
         >
           <view class="entry-meta">
             <view class="dir-badge" :class="`dir-${entry.direction.toLowerCase()}`">
@@ -105,6 +106,7 @@ defineEmits<{
   'update:displayMode': [mode: DisplayMode]
   clear: []
   export: []
+  'save-sample': [entry: LogEntry]
 }>()
 
 const scrollId = 'ble-log-scroll'

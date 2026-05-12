@@ -134,6 +134,9 @@ export const en: I18nKeys = {
       fmtTxt: 'Text TXT',
       fmtMd: 'Markdown',
       fmtCsv: 'Spreadsheet CSV',
+      fmtAiMd: 'AI Report',
+      fmtSpecJson: 'Spec JSON',
+      fmtMockJson: 'Mock JSON',
       confirm: 'Export',
       loadingChars: 'Loading all characteristics...',
       success: 'Export Successful',
@@ -187,6 +190,8 @@ export const en: I18nKeys = {
     bytes: 'bytes',
     charHistory: 'Char Value History',
     noHistory: 'No history yet',
+    sampleSaved: 'Saved as protocol sample',
+    sampleSaveFailed: 'This log cannot be saved as a sample',
     moreMenu: {
       read: 'Read Characteristic',
       export: 'Export Log',

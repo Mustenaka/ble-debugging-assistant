@@ -13,10 +13,13 @@ import {
   RingBuffer,
   type LogEntry,
   type QuickCommand,
+  type BleProtocolSample,
   loadQuickCommands,
   saveQuickCommands,
   saveRecentDevice,
   loadRecentDevices,
+  loadProtocolSamples,
+  saveProtocolSample,
   type RecentDevice,
 } from '../utils/buffer'
 
@@ -36,6 +39,7 @@ export interface DeviceSession {
   rssiHistory: { time: number; rssi: number }[]
   rssiPollTimer: ReturnType<typeof setInterval> | null
   charValueHistory: Record<string, { time: number; hex: string }[]>
+  savedSamples: BleProtocolSample[]
   currentMtu: number
   activeServiceId: string
   activeCharacteristicId: string
@@ -57,6 +61,7 @@ function createSession(device: BleDevice): DeviceSession {
     rssiHistory: [],
     rssiPollTimer: null,
     charValueHistory: {},
+    savedSamples: loadProtocolSamples(device.deviceId),
     currentMtu: 23,
     activeServiceId: '',
     activeCharacteristicId: '',
@@ -121,6 +126,7 @@ export const useBleStore = defineStore('ble', () => {
   const rxBytes = computed(() => activeSession.value?.rxBytes ?? 0)
   const rssiHistory = computed(() => activeSession.value?.rssiHistory ?? [])
   const charValueHistory = computed(() => activeSession.value?.charValueHistory ?? {})
+  const savedSamples = computed(() => activeSession.value?.savedSamples ?? [])
   const currentMtu = computed(() => activeSession.value?.currentMtu ?? 23)
   const activeServiceId = computed(() => activeSession.value?.activeServiceId ?? '')
   const activeCharacteristicId = computed(() => activeSession.value?.activeCharacteristicId ?? '')
@@ -179,6 +185,8 @@ export const useBleStore = defineStore('ble', () => {
         ascii: bufToAscii(value),
         rawLength: value.byteLength,
         label: `${shortUUID(serviceId)} / ${shortUUID(characteristicId)}`,
+        serviceUUID: serviceId,
+        characteristicUUID: characteristicId,
       }
       session.logBuffer.push(entry)
       session.logs = session.logBuffer.getAll()
@@ -346,6 +354,8 @@ export const useBleStore = defineStore('ble', () => {
       ascii: bufToAscii(data),
       rawLength: data.byteLength,
       label,
+      serviceUUID: session.activeServiceId,
+      characteristicUUID: session.activeCharacteristicId,
     }
     session.logBuffer.push(entry)
     session.logs = session.logBuffer.getAll()
@@ -373,6 +383,31 @@ export const useBleStore = defineStore('ble', () => {
       session.rxBytes = 0
       triggerSessionUpdate()
     }
+  }
+
+  function saveLogAsProtocolSample(logId: string, name?: string, deviceId?: string) {
+    const id = deviceId ?? activeSessionId.value
+    const session = getSession(id)
+    if (!session) return null
+    const entry = session.logs.find((log) => log.id === logId)
+    if (!entry || entry.direction === 'SYS' || !entry.serviceUUID || !entry.characteristicUUID) return null
+    const sample: BleProtocolSample = {
+      id: `sample_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      deviceId: session.device.deviceId,
+      serviceUUID: entry.serviceUUID,
+      characteristicUUID: entry.characteristicUUID,
+      direction: entry.direction,
+      name: name?.trim() || `${entry.direction} ${shortUUID(entry.characteristicUUID)} ${session.savedSamples.length + 1}`,
+      hex: entry.hex,
+      ascii: entry.ascii,
+      rawLength: entry.rawLength,
+      timestamp: Date.now(),
+      sourceLogId: entry.id,
+      operationId: entry.operationId,
+    }
+    session.savedSamples = saveProtocolSample(sample)
+    triggerSessionUpdate()
+    return sample
   }
 
   // ── 快捷命令 ──────────────────────────────────────────────────────────────
@@ -552,6 +587,7 @@ export const useBleStore = defineStore('ble', () => {
     rxBytes,
     rssiHistory,
     charValueHistory,
+    savedSamples,
     currentMtu,
     activeServiceId,
     activeCharacteristicId,
@@ -577,6 +613,7 @@ export const useBleStore = defineStore('ble', () => {
     addSysLog,
     addCharHistory,
     clearLogs,
+    saveLogAsProtocolSample,
     addQuickCommand,
     removeQuickCommand,
     negotiateMtu,

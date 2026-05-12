@@ -4,7 +4,8 @@
   "description": "Professional BLE Debugging Assistant built with UniApp",
   "scripts": {
     "dev:app": "uni -p app",
-    "build:app": "uni build -p app"
+    "build:app": "uni build -p app",
+    "docs:protocol": "node scripts/preview-protocol-docs.mjs"
   },
   "dependencies": {
     "pinia": "^2.1.7",

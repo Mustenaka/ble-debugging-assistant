@@ -151,6 +151,8 @@
                     </view>
                   </view>
                   <text class="service-full-uuid">{{ service.uuid }}</text>
+                  <text v-if="getServiceDocTitle(deviceId, service.uuid)" class="service-doc-name">{{ getServiceDocTitle(deviceId, service.uuid) }}</text>
+                  <text v-if="getServiceDocSummary(deviceId, service.uuid)" class="service-doc-summary">{{ getServiceDocSummary(deviceId, service.uuid) }}</text>
                 </view>
                 <view class="expand-icon" :class="{ 'expand-icon--open': service.expanded }">
                   <text class="expand-text">›</text>
@@ -179,6 +181,8 @@
                       <view v-if="isSelectedChar(deviceId, service.uuid, char.uuid)" class="selected-dot" />
                     </view>
                     <text class="char-full-uuid">{{ char.uuid }}</text>
+                    <text v-if="getCharDocTitle(deviceId, service.uuid, char.uuid)" class="char-doc-name">{{ getCharDocTitle(deviceId, service.uuid, char.uuid) }}</text>
+                    <text v-if="getCharDocFormat(deviceId, service.uuid, char.uuid)" class="char-doc-format">{{ getCharDocFormat(deviceId, service.uuid, char.uuid) }}</text>
                     <view class="char-props">
                       <view v-if="char.properties.read"          class="prop-badge prop-r"><text class="prop-text">{{ t('device.properties.read') }}</text></view>
                       <view v-if="char.properties.write"         class="prop-badge prop-w"><text class="prop-text">{{ t('device.properties.write') }}</text></view>
@@ -252,6 +256,14 @@ import {
   exportDeviceReportToText, exportDeviceReportToMarkdown, exportDeviceReportToCSV,
   type DeviceReportInfo,
 } from '../../utils/buffer'
+import { matchBuiltinProtocolDocs } from '../../services/builtinProtocolDocs'
+import {
+  buildAiDebugReportMarkdown,
+  buildMockPackJson,
+  buildProtocolSpecJson,
+  getCharacteristicDoc,
+  getServiceDoc,
+} from '../../utils/protocolDocs'
 import SettingsPanel from '../../components/SettingsPanel.vue'
 import RssiChart from '../../components/RssiChart.vue'
 import LeftTabBar from '../../components/LeftTabBar.vue'
@@ -270,13 +282,17 @@ const mtuInputs = reactive<Record<string, string>>({})
 // ── 导出 ──
 const showExportModal = ref(false)
 const exportNotes = ref('')
-const exportFormat = ref<'txt' | 'md' | 'csv'>('txt')
+type ExportFormat = 'txt' | 'md' | 'csv' | 'ai-md' | 'spec-json' | 'mock-json'
+const exportFormat = ref<ExportFormat>('txt')
 const isExporting = ref(false)
 const exportTargetId = ref<string>('')
-const exportFormats = computed(() => [
+const exportFormats = computed<{ value: ExportFormat; label: string }[]>(() => [
   { value: 'txt', label: t('device.export.fmtTxt') },
   { value: 'md',  label: t('device.export.fmtMd') },
   { value: 'csv', label: t('device.export.fmtCsv') },
+  { value: 'ai-md', label: t('device.export.fmtAiMd') },
+  { value: 'spec-json', label: t('device.export.fmtSpecJson') },
+  { value: 'mock-json', label: t('device.export.fmtMockJson') },
 ])
 
 // ── 服务树状态（每 deviceId 独立）───────────────────────────────────────────
@@ -392,6 +408,30 @@ function selectChar(deviceId: string, serviceId: string, charId: string) {
   uni.showToast({ title: `${t('device.selected')} ${shortUUID(charId)}`, icon: 'none', duration: 1000 })
 }
 
+// ── 内置协议文档说明 ────────────────────────────────────────────────────────
+
+function matchedDocsForDevice(deviceId: string) {
+  const session = bleStore.sessions.get(deviceId)
+  return matchBuiltinProtocolDocs((session?.services ?? []).map((s) => s.uuid))
+}
+
+function getServiceDocTitle(deviceId: string, serviceUUID: string): string {
+  return getServiceDoc(matchedDocsForDevice(deviceId), serviceUUID)?.name ?? ''
+}
+
+function getServiceDocSummary(deviceId: string, serviceUUID: string): string {
+  return getServiceDoc(matchedDocsForDevice(deviceId), serviceUUID)?.summary ?? ''
+}
+
+function getCharDocTitle(deviceId: string, serviceUUID: string, charUUID: string): string {
+  return getCharacteristicDoc(matchedDocsForDevice(deviceId), serviceUUID, charUUID)?.name ?? ''
+}
+
+function getCharDocFormat(deviceId: string, serviceUUID: string, charUUID: string): string {
+  const doc = getCharacteristicDoc(matchedDocsForDevice(deviceId), serviceUUID, charUUID)
+  return doc ? `${doc.direction ?? 'unknown'} · ${doc.valueFormat ?? 'unknown'}` : ''
+}
+
 // ── MTU 协商 ──────────────────────────────────────────────────────────────────
 
 async function handleMtuNegotiate(deviceId: string) {
@@ -486,13 +526,28 @@ async function confirmExport() {
       })),
     }
 
+    const matchedProfiles = matchBuiltinProtocolDocs(reportInfo.services.map((s) => s.uuid)).profiles
+    const aiInfo = {
+      device: reportInfo,
+      profiles: matchedProfiles,
+      logs: session.logs,
+      samples: session.savedSamples,
+    }
+
     const fmt = exportFormat.value
-    const mimeType = fmt === 'csv' ? 'text/csv' : 'text/plain'
+    const mimeType = fmt === 'csv'
+      ? 'text/csv'
+      : fmt.includes('json') ? 'application/json' : 'text/plain'
     const content =
-      fmt === 'md'  ? exportDeviceReportToMarkdown(reportInfo) :
-      fmt === 'csv' ? exportDeviceReportToCSV(reportInfo) :
-                      exportDeviceReportToText(reportInfo)
-    const filename = buildDeviceReportFilename(session.device.name, fmt)
+      fmt === 'md'        ? exportDeviceReportToMarkdown(reportInfo) :
+      fmt === 'csv'       ? exportDeviceReportToCSV(reportInfo) :
+      fmt === 'ai-md'     ? buildAiDebugReportMarkdown(aiInfo) :
+      fmt === 'spec-json' ? buildProtocolSpecJson(aiInfo) :
+      fmt === 'mock-json' ? buildMockPackJson(aiInfo) :
+                            exportDeviceReportToText(reportInfo)
+    const ext: 'txt' | 'md' | 'csv' | 'json' =
+      fmt === 'csv' ? 'csv' : fmt.includes('json') ? 'json' : fmt.includes('md') ? 'md' : 'txt'
+    const filename = buildDeviceReportFilename(session.device.name, ext)
     showExportModal.value = false
     const path = await saveLogsToFile(content, filename, mimeType)
 
@@ -720,6 +775,8 @@ async function confirmExport() {
 .service-uuid-row { display: flex; align-items: center; gap: 8px; }
 .service-uuid { font-size: 14px; font-weight: 600; color: var(--color-primary); }
 .service-full-uuid { font-size: 10px; color: var(--text-dimmed); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+.service-doc-name { display: block; font-size: 11px; color: var(--color-accent); font-weight: 600; margin-top: 4px; }
+.service-doc-summary { display: block; font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
 .primary-badge { background: rgba(139,92,246, 0.12); border: 1px solid rgba(139,92,246, 0.25); border-radius: 3px; padding: 1px 5px; }
 .primary-text { font-size: 9px; color: rgb(139,92,246); font-weight: 700; }
 .expand-icon { flex-shrink: 0; transition: transform 0.2s; &--open { transform: rotate(90deg); } }
@@ -744,6 +801,8 @@ async function confirmExport() {
 .char-uuid { font-size: 13px; font-weight: 600; color: var(--color-info, #60a5fa); flex: 1; }
 .selected-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--color-accent); box-shadow: 0 0 6px rgba(var(--color-accent-rgb), 0.6); flex-shrink: 0; }
 .char-full-uuid { font-size: 10px; color: var(--text-dimmed); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 18px; margin-top: 2px; }
+.char-doc-name { display: block; font-size: 11px; color: var(--color-info, #60a5fa); font-weight: 600; padding-left: 18px; margin-top: 4px; }
+.char-doc-format { display: block; font-size: 10px; color: var(--text-muted); padding-left: 18px; margin-top: 1px; }
 .char-props { display: flex; flex-wrap: wrap; gap: 3px; padding-left: 18px; margin-top: 4px; }
 .prop-badge { padding: 1px 6px; border-radius: 3px; }
 .prop-text { font-size: 9px; font-weight: 700; }
@@ -759,9 +818,9 @@ async function confirmExport() {
   display: flex; flex-direction: column; gap: 16px;
 }
 .modal-title { font-size: 16px; font-weight: 700; color: var(--text-primary); }
-.fmt-tabs { display: flex; gap: 6px; }
+.fmt-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 .fmt-tab {
-  flex: 1; height: 36px; display: flex; align-items: center; justify-content: center;
+  flex: 1 1 30%; min-width: 96px; height: 36px; display: flex; align-items: center; justify-content: center;
   background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 8px;
   &:active { opacity: 0.75; }
   &--active { background: rgba(var(--color-primary-rgb), 0.1); border-color: rgba(var(--color-primary-rgb), 0.4); .fmt-tab-text { color: var(--color-primary); } }
