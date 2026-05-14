@@ -21,6 +21,8 @@
 
 **BLE Debugger** is a cross-platform (Android / iOS) Bluetooth Low Energy debugging assistant built with UniApp + Vue3. Designed for embedded engineers and hardware developers, it delivers a serial-tool-like experience for wireless debugging — complete with real-time HEX/ASCII communication, service tree inspection, notify subscriptions, quick command management, RSSI signal charts, MTU negotiation, characteristic value diff history, custom protocol plugin execution, multi-format log export, and **simultaneous multi-device debugging**.
 
+The long-term product direction is to make BLE debugging feel closer to **Postman / Apifox for API debugging**: services and characteristics should not remain anonymous UUIDs, but become documented interfaces with request / response examples, field semantics, saved samples, AI-readable reports, and mock packs that can help app teams test without hardware.
+
 The app ships with two display themes (Dark / Light) and full bilingual support (Chinese / English), switchable at any time without restarting.
 
 <div style="display: flex; flex-wrap: wrap; gap: 10px; max-width: 420px;">
@@ -38,6 +40,7 @@ The app ships with two display themes (Dark / Light) and full bilingual support 
 - **Device Scanning** — Real-time BLE advertisement discovery with radar animation; scanning stays active even while devices are connected
 - **Smart Filtering** — Filter by device name or minimum RSSI threshold
 - **Service & Characteristic Tree** — Multi-device tree view showing all connected devices' services and characteristics with property badges (READ / WRITE / WRITE NR / NOTIFY / INDICATE)
+- **Built-in Protocol Hints** — Markdown-based built-in profiles enrich known services and characteristics with semantic names, valid-use notes, value formats, and interface examples
 - **HEX / ASCII Communication** — Full duplex send & receive with format switching
 - **Notify Subscriptions** — Toggle BLE notifications per characteristic
 - **Read on Demand** — Trigger explicit characteristic reads
@@ -50,6 +53,8 @@ The app ships with two display themes (Dark / Light) and full bilingual support 
 - **Communication Log** — Timestamped, color-coded TX/RX/SYS entries with 2000-entry ring buffer; fully isolated per connected device
 - **Dual Display Mode** — View data in HEX, ASCII, or DUAL mode simultaneously
 - **Log Export (TXT / CSV)** — Export session logs in plain text or spreadsheet-ready CSV format
+- **AI / Mock Export** — Export AI-friendly debug reports, protocol JSON, and mock JSON packs for downstream agents or app-side simulation
+- **Saved Protocol Samples** — Long-press TX/RX logs to save concrete communication samples, grouped by device/service/characteristic for later reporting and mocking
 - **Protocol Analysis** — Built-in RAW / UART parser; **custom JavaScript plugin system** for user-defined frame parsers
 - **RSSI Signal Chart** — Live bar chart of received signal strength over time, polled every 2 s while connected
 - **Characteristic Value Diff** — Per-characteristic history of received values with byte-level change highlighting
@@ -130,6 +135,9 @@ npm run dev:app
 
 # Production build
 npm run build:app
+
+# Preview built-in BLE protocol Markdown templates as parsed JSON
+npm run docs:protocol
 ```
 
 ---
@@ -157,10 +165,11 @@ uniapp-ble-debugging-assistant/
 │   └── SettingsPanel.vue        # Bottom-sheet: theme & language switcher
 │
 ├── services/
-│   └── bleManager.ts            # BLE abstraction layer
+│   ├── bleManager.ts            # BLE abstraction layer
 │                                #   Adapter state machine: UNINITIALIZED → IDLE ↔ SCANNING
 │                                #   Per-device state: Map<deviceId, CONNECTING|CONNECTED|DISCONNECTED>
 │                                #   + getRSSI(deviceId)  + negotiateMTU(deviceId, mtu)
+│   └── builtinProtocolDocs.ts   # Loads built-in Markdown protocol templates and exposes match helpers
 │
 ├── store/
 │   ├── bleStore.ts              # BLE runtime state
@@ -180,9 +189,17 @@ uniapp-ble-debugging-assistant/
 │
 ├── utils/
 │   ├── hex.ts                   # HEX↔ArrayBuffer, ASCII, UUID, RSSI utilities
-│   └── buffer.ts                # Log entries, ring buffer, TXT/CSV export, persistence
+│   ├── buffer.ts                # Log entries, ring buffer, TXT/CSV export, persistence, saved samples
+│   └── protocolDocs.ts          # Markdown protocol parser + AI report / protocol JSON / mock JSON builders
+│
+├── docs/
+│   └── protocols/               # Human-previewable Markdown protocol templates used by the app
+│
+├── scripts/
+│   └── preview-protocol-docs.mjs # Local protocol-template preview command (`npm run docs:protocol`)
 │
 ├── App.vue                      # Global CSS custom property definitions (both themes)
+├── env.d.ts                     # Raw Markdown import declarations
 ├── pages.json                   # Route configuration
 └── manifest.json                # App permissions & platform config
 ```
@@ -239,6 +256,7 @@ bleStore
   │       logs            LogEntry[]
   │       rssiHistory     { time, rssi }[]        ← isolated, 60 points
   │       charValueHistory Record<charId, { time, hex }[]>
+  │       savedSamples    BleProtocolSample[]     ← long-pressed TX/RX samples for reports and mocks
   │       currentMtu      number
   │       txBytes / rxBytes number
   │       activeServiceId / activeCharacteristicId / notifyEnabled
@@ -252,6 +270,39 @@ bleStore
 ```
 
 **Active session proxy** — all debug page computed properties (`isConnected`, `logs`, `services`, `activeCharacteristic`, …) read from `sessions.get(activeSessionId)`. Switching tabs by changing `activeSessionId` instantly reflects a different device's state with zero re-initialization.
+
+### API-like BLE Documentation Flow
+
+```
+docs/protocols/*.md
+  │
+  ▼
+services/builtinProtocolDocs.ts
+  │  raw Markdown import + parseProtocolMarkdown()
+  ▼
+utils/protocolDocs.ts
+  │  match by Service UUID
+  ▼
+Device page service tree
+  │  semantic service / characteristic names, direction, value format
+  ▼
+Export pipeline
+  ├── AI Debug Report Markdown
+  ├── Protocol Spec JSON
+  └── Mock Pack JSON
+```
+
+Built-in protocol documentation is intentionally authored as Markdown first. This keeps the source easy to preview, edit, and discuss locally, while the app parses the same Markdown into structured `ProtocolProfileDoc` objects for UI enrichment and export.
+
+### AI-friendly Reports & Mock Packs
+
+The current export layer treats BLE traffic like an API contract:
+
+- **AI Debug Report Markdown** combines device metadata, matched built-in profiles, service/characteristic semantics, saved samples, and recent TX/RX logs.
+- **Protocol Spec JSON** preserves the machine-readable protocol model: services, characteristics, interfaces, field tables, examples, and saved samples.
+- **Mock Pack JSON** groups mock seeds by service and characteristic, including request/response examples and user-saved TX/RX samples. This is designed for AI agents or app-side test harnesses that need to simulate BLE devices without hardware.
+
+TX/RX logs now carry `serviceUUID` and `characteristicUUID`, so exported artifacts can classify communication by endpoint instead of only listing raw bytes.
 
 ### Theme System
 
@@ -313,6 +364,42 @@ return {
 ```
 
 Plugins are executed via `new Function()` in `protocolStore.runPlugin()`. Only one plugin can be enabled at a time.
+
+### Built-in Protocol Markdown Format
+
+Built-in protocol templates live under `docs/protocols/`. Each template can be read as normal documentation and parsed by the app.
+
+```md
+---
+id: generic-command-profile
+name: Generic Command BLE Profile
+version: 0.1.0
+summary: Command/response BLE template.
+---
+
+## Service: Generic Command Service
+
+- uuid: 0000FFE0-0000-1000-8000-00805F9B34FB
+- summary: Vendor command transport service.
+- validWhen: Use for FFE0/FFE1-style command transports.
+- role: request-response transport
+
+### Characteristic: Command TX
+
+- uuid: 0000FFE1-0000-1000-8000-00805F9B34FB
+- properties: WRITE, WRITE_NR
+- direction: app-to-device
+- valueFormat: binary-frame
+
+#### Interface: Get Device Info
+
+- operationId: device.getInfo
+- requestExample: AA 01 00 AB
+- responseExample: AA 81 03 01 00 10 39
+- mock: Return responseExample when request starts with AA 01.
+```
+
+Use `npm run docs:protocol` to preview the parsed JSON representation.
 
 ---
 
@@ -400,6 +487,7 @@ Plugins are executed via `new Function()` in `protocolStore.runPlugin()`. Only o
 | Quick Commands | `ble_quick_commands` | `[]` |
 | Recent Devices | `ble_recent_devices` | `[]` |
 | Protocol Plugins | `ble_protocol_plugins` | `[]` |
+| Saved Protocol Samples | `ble_protocol_samples` | `{}` |
 
 All settings survive app restarts via `uni.setStorageSync`.
 

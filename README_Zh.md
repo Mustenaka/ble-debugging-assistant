@@ -21,6 +21,8 @@
 
 **BLE 调试助手**是一款基于 UniApp + Vue3 开发的跨平台（Android / iOS）蓝牙低功耗调试工具。专为嵌入式开发者和硬件工程师设计，提供类似串口调试助手的无线调试体验——涵盖实时 HEX/ASCII 双向通信、服务特征值树状解析、Notify 订阅、快捷命令管理、RSSI 信号历史图表、MTU 协商控制、特征值历史 Diff 对比、自定义协议插件执行、多格式日志导出，以及**多设备同时调试**。
 
+这个项目的下一阶段产品方向，是让 BLE 调试更接近 **Postman / Apifox 调试 API 接口**：服务和特征值不再只是 UUID，而是可描述、可归档、可导出的接口文档，包含请求/响应样例、字段含义、有效服务说明、调试记录、AI 友好的报告，以及可用于脱离硬件测试的 Mock 数据包。
+
 应用内置**暗色/亮色双主题**和**中/英双语界面**，无需重启即可随时切换。
 
 <div style="display: flex; flex-wrap: wrap; gap: 10px; max-width: 420px;">
@@ -38,6 +40,7 @@
 - **设备扫描** — 实时发现周边 BLE 广播包，配合雷达动效可视化；已连接设备时扫描仍可继续
 - **智能过滤** — 支持按设备名称或 RSSI 信号阈值筛选设备
 - **服务特征值树** — 多设备总览树，所有已连接设备的服务与特征值并列展示，属性标签一目了然（READ / WRITE / WRITE NR / NOTIFY / INDICATE）
+- **内置协议提示** — 以内置 Markdown 协议文档为源，为已知服务/特征补充语义名称、有效性说明、值格式和接口样例
 - **HEX / ASCII 双向通信** — 支持两种格式的数据收发，随时切换
 - **Notify 订阅** — 逐特征值开启/关闭 BLE 通知监听
 - **主动读取** — 按需触发特征值 Read 操作
@@ -50,6 +53,8 @@
 - **通信日志** — 带时间戳的 TX/RX/SYS 彩色日志，环形缓冲区最多保留 2000 条；每设备完全独立
 - **三种显示模式** — HEX 模式、ASCII 模式、DUAL 双显模式自由切换
 - **日志导出（TXT / CSV）** — 导出时选择纯文本格式或电子表格 CSV 格式，一键保存至本地
+- **AI / Mock 导出** — 支持导出 AI 调试报告、协议 JSON、Mock JSON，方便 AI agent 阅读和生成模拟测试数据
+- **协议样例保存** — 长按 TX/RX 日志即可保存为协议样例，按设备/服务/特征值归类进入后续报告和 Mock 文档
 - **协议解析** — 内置 RAW / UART 解析器；支持**自定义 JavaScript 协议插件**，自定义帧格式解析逻辑
 - **RSSI 信号历史图表** — 连接后每 2 秒采集一次信号强度，以柱状图实时展示趋势
 - **特征值历史 Diff** — 记录每个特征值的历史接收值，逐字节高亮标注变化字节
@@ -130,6 +135,9 @@ npm run dev:app
 
 # 生产构建
 npm run build:app
+
+# 预览内置 BLE 协议 Markdown 模板的解析结果
+npm run docs:protocol
 ```
 
 ---
@@ -157,10 +165,11 @@ uniapp-ble-debugging-assistant/
 │   └── SettingsPanel.vue        # 底部弹出设置面板（主题 & 语言切换）
 │
 ├── services/
-│   └── bleManager.ts            # BLE 封装层
+│   ├── bleManager.ts            # BLE 封装层
 │                                #   适配器状态机：UNINITIALIZED → IDLE ↔ SCANNING
 │                                #   每设备状态：Map<deviceId, CONNECTING|CONNECTED|DISCONNECTED>
 │                                #   + getRSSI(deviceId)  + negotiateMTU(deviceId, mtu)
+│   └── builtinProtocolDocs.ts   # 加载内置 Markdown 协议模板，并提供 UUID 匹配能力
 │
 ├── store/
 │   ├── bleStore.ts              # BLE 运行时状态
@@ -180,9 +189,17 @@ uniapp-ble-debugging-assistant/
 │
 ├── utils/
 │   ├── hex.ts                   # HEX↔ArrayBuffer、ASCII、UUID、RSSI 工具函数
-│   └── buffer.ts                # 日志条目、环形缓冲区、TXT/CSV 导出、持久化
+│   ├── buffer.ts                # 日志条目、环形缓冲区、导出、持久化、协议样例保存
+│   └── protocolDocs.ts          # Markdown 协议解析 + AI 报告 / 协议 JSON / Mock JSON 生成
+│
+├── docs/
+│   └── protocols/               # 可本地预览、也会被 App 解析加载的 Markdown 协议模板
+│
+├── scripts/
+│   └── preview-protocol-docs.mjs # 本地协议模板预览命令（npm run docs:protocol）
 │
 ├── App.vue                      # 全局 CSS 自定义属性定义（双主题变量）
+├── env.d.ts                     # raw Markdown import 类型声明
 ├── pages.json                   # 路由配置
 └── manifest.json                # 应用权限 & 平台配置
 ```
@@ -239,6 +256,7 @@ bleStore
   │       logs            LogEntry[]
   │       rssiHistory     { time, rssi }[]        ← 独立，最多 60 个点
   │       charValueHistory Record<charId, { time, hex }[]>
+  │       savedSamples    BleProtocolSample[]     ← 长按 TX/RX 保存的协议样例
   │       currentMtu      number
   │       txBytes / rxBytes number
   │       activeServiceId / activeCharacteristicId / notifyEnabled
@@ -252,6 +270,39 @@ bleStore
 ```
 
 **活跃会话代理** — 调试页所有计算属性（`isConnected`、`logs`、`services`、`activeCharacteristic` 等）均从 `sessions.get(activeSessionId)` 读取。切换 Tab 只需更改 `activeSessionId`，无需任何重新初始化，即时反映另一设备的完整状态。
+
+### API 化 BLE 文档流
+
+```
+docs/protocols/*.md
+  │
+  ▼
+services/builtinProtocolDocs.ts
+  │  raw Markdown import + parseProtocolMarkdown()
+  ▼
+utils/protocolDocs.ts
+  │  按 Service UUID 匹配
+  ▼
+设备页服务树
+  │  显示服务/特征语义、方向、值格式
+  ▼
+导出管线
+  ├── AI Debug Report Markdown
+  ├── Protocol Spec JSON
+  └── Mock Pack JSON
+```
+
+内置协议文档优先以 Markdown 编写。这样既方便本地预览、评审和持续补充，又能被 App 解析成结构化 `ProtocolProfileDoc`，用于设备页增强展示和导出。
+
+### AI 友好报告与 Mock 文档
+
+当前导出层会把 BLE 通信按“接口契约”处理：
+
+- **AI Debug Report Markdown** 汇总设备信息、匹配到的内置协议、服务/特征语义、保存的协议样例、近期 TX/RX 日志。
+- **Protocol Spec JSON** 保留机器可读协议模型，包括服务、特征、接口、字段表、示例和保存样例。
+- **Mock Pack JSON** 按服务/特征值整理 mock seed，包含请求/响应样例和用户保存的 TX/RX 样例，方便 AI agent 或 App 侧测试工具生成无硬件模拟数据。
+
+TX/RX 日志现在会携带 `serviceUUID` 与 `characteristicUUID`，导出时能按 BLE endpoint 归类，而不是只有原始字节列表。
 
 ### 主题系统
 
@@ -313,6 +364,42 @@ return {
 ```
 
 同一时刻只允许启用一个插件。管理入口：**调试页 → 协议解析 → 自定义 → 管理插件**。
+
+### 内置协议 Markdown 格式
+
+内置协议模板位于 `docs/protocols/`。每份模板既是人可读文档，也会被 App 解析。
+
+```md
+---
+id: generic-command-profile
+name: Generic Command BLE Profile
+version: 0.1.0
+summary: Command/response BLE template.
+---
+
+## Service: Generic Command Service
+
+- uuid: 0000FFE0-0000-1000-8000-00805F9B34FB
+- summary: Vendor command transport service.
+- validWhen: Use for FFE0/FFE1-style command transports.
+- role: request-response transport
+
+### Characteristic: Command TX
+
+- uuid: 0000FFE1-0000-1000-8000-00805F9B34FB
+- properties: WRITE, WRITE_NR
+- direction: app-to-device
+- valueFormat: binary-frame
+
+#### Interface: Get Device Info
+
+- operationId: device.getInfo
+- requestExample: AA 01 00 AB
+- responseExample: AA 81 03 01 00 10 39
+- mock: Return responseExample when request starts with AA 01.
+```
+
+可执行 `npm run docs:protocol` 预览解析后的 JSON 结构。
 
 ---
 
@@ -404,6 +491,7 @@ return {
 | 快捷命令 | `ble_quick_commands` | `[]` |
 | 最近设备 | `ble_recent_devices` | `[]` |
 | 协议插件 | `ble_protocol_plugins` | `[]` |
+| 协议样例 | `ble_protocol_samples` | `{}` |
 
 全部设置通过 `uni.setStorageSync` 持久化，应用重启后自动恢复。
 
