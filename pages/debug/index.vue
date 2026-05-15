@@ -170,16 +170,70 @@
     <view v-if="showSaveQuickDialog" class="modal-overlay" @click="showSaveQuickDialog = false">
       <view class="modal-card" @click.stop>
         <text class="modal-title">{{ t('debug.saveQuickCmd') }}</text>
-        <input
-          class="modal-input"
-          v-model="quickCmdName"
-          :placeholder="t('debug.cmdNamePlaceholder')"
-          placeholder-class="modal-ph"
-          maxlength="20"
-          :focus="showSaveQuickDialog"
-          :adjust-position="true"
-        />
-        <text class="modal-preview mono">{{ pendingQuickData?.data }}</text>
+
+        <view class="modal-field">
+          <text class="modal-label">{{ t('debug.quickName') }}</text>
+          <input
+            class="modal-input"
+            :value="quickCmdName"
+            :placeholder="t('debug.cmdNamePlaceholder')"
+            placeholder-class="modal-ph"
+            maxlength="40"
+            confirm-type="next"
+            :adjust-position="true"
+            cursor-spacing="24"
+            @input="quickCmdName = $event.detail.value"
+          />
+        </view>
+
+        <view class="modal-field">
+          <text class="modal-label">{{ t('debug.quickType') }}</text>
+          <view class="quick-type-tabs">
+            <view
+              v-for="item in quickCommandTypes"
+              :key="item.value"
+              class="quick-type-tab"
+              :class="{ 'quick-type-tab--active': quickCmdType === item.value }"
+              @click="quickCmdType = item.value"
+            >
+              <text class="quick-type-text">{{ item.label }}</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="modal-field">
+          <text class="modal-label">{{ t('debug.quickDescription') }}</text>
+          <textarea
+            class="modal-textarea"
+            :value="quickCmdDescription"
+            :placeholder="t('debug.quickDescriptionPlaceholder')"
+            placeholder-class="modal-ph"
+            maxlength="200"
+            :auto-height="false"
+            :adjust-position="true"
+            cursor-spacing="24"
+            @input="quickCmdDescription = $event.detail.value"
+          />
+        </view>
+
+        <view class="modal-field">
+          <view class="modal-label-row">
+            <text class="modal-label">{{ t('debug.quickContent') }}</text>
+            <text class="modal-mode-badge">{{ quickCmdMode.toUpperCase() }}</text>
+          </view>
+          <textarea
+            class="modal-command mono"
+            :value="quickCmdData"
+            :placeholder="quickCmdMode === 'hex' ? t('hexInput.hexPlaceholder') : t('hexInput.asciiPlaceholder')"
+            placeholder-class="modal-ph"
+            maxlength="1000"
+            :auto-height="false"
+            :adjust-position="true"
+            cursor-spacing="24"
+            @input="quickCmdData = $event.detail.value"
+          />
+        </view>
+
         <view class="modal-actions">
           <view class="modal-btn modal-btn--cancel" @click="showSaveQuickDialog = false"><text>{{ t('common.cancel') }}</text></view>
           <view class="modal-btn modal-btn--confirm" @click="confirmSaveQuick"><text>{{ t('common.save') }}</text></view>
@@ -210,8 +264,8 @@ import { useBleStore } from '../../store/bleStore'
 import { useAppStore } from '../../store/appStore'
 import { useI18n } from '../../composables/useI18n'
 import { useResponsive } from '../../composables/useResponsive'
-import { shortUUID } from '../../utils/hex'
-import { exportLogsToText, exportLogsToCSV, saveLogsToFile, buildExportFilename, type ExportDeviceInfo } from '../../utils/buffer'
+import { isValidHex, normalizeHex, shortUUID } from '../../utils/hex'
+import { exportLogsToText, exportLogsToCSV, saveLogsToFile, buildExportFilename, type ExportDeviceInfo, type QuickCommandType } from '../../utils/buffer'
 import { useProtocolStore } from '../../store/protocolStore'
 import BleLogPanel from '../../components/BleLogPanel.vue'
 import HexInput from '../../components/HexInput.vue'
@@ -235,7 +289,10 @@ const logDisplayMode = ref<'hex' | 'ascii' | 'both'>('hex')
 const { isWideScreen } = useResponsive()
 const showSaveQuickDialog = ref(false)
 const quickCmdName = ref('')
-const pendingQuickData = ref<{ data: string; mode: 'hex' | 'ascii' } | null>(null)
+const quickCmdType = ref<QuickCommandType>('custom')
+const quickCmdDescription = ref('')
+const quickCmdData = ref('')
+const quickCmdMode = ref<'hex' | 'ascii'>('hex')
 
 onMounted(() => {
   appStore.applySystemStyle()
@@ -265,6 +322,14 @@ const protocols = computed(() => [
   { id: 'custom', label: t('debug.customProtocol') },
 ])
 
+const quickCommandTypes = computed<{ value: QuickCommandType; label: string }[]>(() => [
+  { value: 'query', label: t('debug.quickTypes.query') },
+  { value: 'control', label: t('debug.quickTypes.control') },
+  { value: 'config', label: t('debug.quickTypes.config') },
+  { value: 'mock', label: t('debug.quickTypes.mock') },
+  { value: 'custom', label: t('debug.quickTypes.custom') },
+])
+
 const parsedProtocol = computed(() => {
   const lastRx = [...bleStore.logs].reverse().find((l) => l.direction === 'RX')
   if (!lastRx?.hex || activeProtocol.value === 'raw') return null
@@ -286,10 +351,10 @@ const parsedProtocol = computed(() => {
   return null
 })
 
-async function handleSend(buffer: ArrayBuffer) {
+async function handleSend(buffer: ArrayBuffer, label?: string) {
   if (isSending.value) return
   isSending.value = true
-  try { await bleStore.sendData(buffer, true) }
+  try { await bleStore.sendData(buffer, true, label) }
   catch (e: any) { uni.showToast({ title: e.message ?? t('debug.sendFailed'), icon: 'none', duration: 2000 }) }
   finally { isSending.value = false }
 }
@@ -460,12 +525,29 @@ function openSettings() { showMoreMenu.value = false; showSettings.value = true 
 
 function handleSaveQuick(payload: { data: string; mode: 'hex' | 'ascii' }) {
   if (!payload.data.trim()) { uni.showToast({ title: t('debug.saveQuickTip'), icon: 'none' }); return }
-  pendingQuickData.value = payload; quickCmdName.value = ''; showSaveQuickDialog.value = true
+  quickCmdName.value = ''
+  quickCmdType.value = payload.mode === 'ascii' ? 'custom' : 'query'
+  quickCmdDescription.value = ''
+  quickCmdData.value = payload.data.trim()
+  quickCmdMode.value = payload.mode
+  showSaveQuickDialog.value = true
 }
 
 function confirmSaveQuick() {
   if (!quickCmdName.value.trim()) { uni.showToast({ title: t('debug.cmdNameRequired'), icon: 'none' }); return }
-  bleStore.addQuickCommand({ name: quickCmdName.value.trim(), data: pendingQuickData.value!.data, mode: pendingQuickData.value!.mode })
+  if (!quickCmdData.value.trim()) { uni.showToast({ title: t('debug.saveQuickTip'), icon: 'none' }); return }
+  const data = quickCmdMode.value === 'hex' ? normalizeHex(quickCmdData.value) : quickCmdData.value.trim()
+  if (quickCmdMode.value === 'hex' && !isValidHex(data)) {
+    uni.showToast({ title: t('hexInput.hexError'), icon: 'none' })
+    return
+  }
+  bleStore.addQuickCommand({
+    name: quickCmdName.value.trim(),
+    commandType: quickCmdType.value,
+    description: quickCmdDescription.value.trim(),
+    data,
+    mode: quickCmdMode.value,
+  })
   showSaveQuickDialog.value = false
   uni.showToast({ title: t('debug.saved'), icon: 'success' })
 }
@@ -636,11 +718,21 @@ function goToDevice() { uni.switchTab({ url: '/pages/device/index' }) }
 
 /* ── 弹窗 ── */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 300; }
-.modal-card { background: var(--bg-card); border-radius: 16px; border: 1px solid var(--border-default); padding: 24px; margin: 24px; width: 100%; max-width: 360px; display: flex; flex-direction: column; gap: 16px; box-shadow: var(--shadow-card); }
+.modal-card { background: var(--bg-card); border-radius: 16px; border: 1px solid var(--border-default); padding: 20px; margin: 18px; width: 100%; max-width: 420px; max-height: 86vh; display: flex; flex-direction: column; gap: 14px; box-shadow: var(--shadow-card); overflow-y: auto; }
 .modal-title { font-size: 16px; font-weight: 700; color: var(--text-primary); }
-.modal-input { background: var(--bg-input); border: 1px solid var(--border-default); border-radius: 8px; padding: 12px 14px; font-size: 14px; color: var(--text-primary); width: 100%; }
+.modal-field { display: flex; flex-direction: column; gap: 7px; }
+.modal-label-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.modal-label { font-size: 11px; color: var(--text-muted); font-weight: 700; text-transform: uppercase; }
+.modal-input { background: var(--bg-input); border: 1px solid var(--border-default); border-radius: 8px; padding: 11px 12px; font-size: 14px; color: var(--text-primary); width: 100%; min-height: 42px; }
+.modal-textarea, .modal-command { background: var(--bg-input); border: 1px solid var(--border-default); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--text-primary); width: 100%; line-height: 1.5; }
+.modal-textarea { height: 74px; }
+.modal-command { height: 104px; color: var(--text-mono); }
 .modal-ph { color: var(--text-dimmed); }
-.modal-preview { font-size: 12px; color: var(--text-mono); padding: 8px 12px; background: var(--bg-elevated); border-radius: 6px; word-break: break-all; }
+.modal-mode-badge { font-size: 10px; color: var(--color-accent); font-weight: 700; padding: 2px 7px; border-radius: 4px; background: rgba(var(--color-accent-rgb), 0.1); border: 1px solid rgba(var(--color-accent-rgb), 0.24); }
+.quick-type-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.quick-type-tab { flex: 1 1 30%; min-width: 72px; height: 34px; display: flex; align-items: center; justify-content: center; background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 8px; &:active { opacity: 0.75; } }
+.quick-type-tab--active { background: rgba(var(--color-primary-rgb), 0.1); border-color: rgba(var(--color-primary-rgb), 0.35); .quick-type-text { color: var(--color-primary); } }
+.quick-type-text { font-size: 12px; color: var(--text-muted); font-weight: 600; }
 .modal-actions { display: flex; gap: 10px; }
 .modal-btn { flex: 1; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 10px; font-size: 14px; font-weight: 600; }
 .modal-btn--cancel { background: var(--bg-elevated); border: 1px solid var(--border-subtle); color: var(--text-secondary); }

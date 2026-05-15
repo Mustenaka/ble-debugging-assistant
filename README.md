@@ -49,7 +49,7 @@ The app ships with two display themes (Dark / Light) and full bilingual support 
 - **Multi-Device Simultaneous Debugging** — Connect and debug multiple BLE devices at the same time; each device has its own isolated log buffer, service tree, and communication state
 
 ### Developer Experience
-- **Quick Commands** — Save frequently used payloads with custom names; long-press to delete
+- **Quick Commands** — Save frequently used payloads as Postman-like command cards with name, type, description, content, and content format; long-press to delete
 - **Communication Log** — Timestamped, color-coded TX/RX/SYS entries with 2000-entry ring buffer; fully isolated per connected device
 - **Dual Display Mode** — View data in HEX, ASCII, or DUAL mode simultaneously
 - **Log Export (TXT / CSV)** — Export session logs in plain text or spreadsheet-ready CSV format

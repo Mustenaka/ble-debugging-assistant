@@ -413,7 +413,12 @@ export const useBleStore = defineStore('ble', () => {
   // ── 快捷命令 ──────────────────────────────────────────────────────────────
 
   function addQuickCommand(cmd: Omit<QuickCommand, 'id'>) {
-    const newCmd: QuickCommand = { ...cmd, id: `qc_${Date.now()}` }
+    const newCmd: QuickCommand = {
+      ...cmd,
+      id: `qc_${Date.now()}`,
+      commandType: cmd.commandType ?? 'custom',
+      description: cmd.description ?? '',
+    }
     quickCommands.value.unshift(newCmd)
     saveQuickCommands(quickCommands.value)
   }

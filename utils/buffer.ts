@@ -537,10 +537,14 @@ export class RingBuffer<T> {
 }
 
 /** 快捷命令类型 */
+export type QuickCommandType = 'query' | 'control' | 'config' | 'mock' | 'custom'
+
 export interface QuickCommand {
   id: string
   name: string
-  data: string // HEX 字符串
+  commandType?: QuickCommandType
+  description?: string
+  data: string
   mode: 'hex' | 'ascii'
 }
 
@@ -548,7 +552,16 @@ export interface QuickCommand {
 export function loadQuickCommands(): QuickCommand[] {
   try {
     const raw = uni.getStorageSync('ble_quick_commands')
-    return raw ? JSON.parse(raw) : []
+    const parsed = raw ? JSON.parse(raw) : []
+    if (!Array.isArray(parsed)) return []
+    return parsed.map((cmd: any) => ({
+      id: String(cmd.id ?? `qc_${Date.now()}_${Math.random().toString(36).slice(2)}`),
+      name: String(cmd.name ?? 'Untitled'),
+      commandType: (cmd.commandType ?? 'custom') as QuickCommandType,
+      description: String(cmd.description ?? ''),
+      data: String(cmd.data ?? ''),
+      mode: cmd.mode === 'ascii' ? 'ascii' : 'hex',
+    }))
   } catch {
     return []
   }

@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here.
 
+## 2026-05-15
+
+### Fixed
+
+- Fixed quick-command saving flow by replacing the fragile command-name `v-model` binding in the modal with explicit input handlers.
+
+### Added
+
+- Upgraded quick commands toward a Postman-like saved request model with name, type, description, content, and content format.
+- Added command type badges in the quick command list.
+- Added quick-command names to TX log labels when a saved command is applied and sent.
+
 ## 2026-05-14
 
 ### Added

@@ -47,6 +47,7 @@
       <scroll-view scroll-x class="cmd-scroll">
         <view class="cmd-list">
           <view v-for="cmd in quickCommands" :key="cmd.id" class="cmd-chip" @click="applyQuickCommand(cmd)" @longpress="$emit('delete-quick', cmd.id)">
+            <text class="cmd-type">{{ commandTypeLabel(cmd) }}</text>
             <text class="cmd-name">{{ cmd.name }}</text>
           </view>
           <view class="cmd-chip cmd-chip--add" @click="$emit('save-quick', { data: inputValue, mode })">
@@ -101,6 +102,7 @@ const emit = defineEmits<{
 const mode = ref<'hex' | 'ascii'>('hex')
 const inputValue = ref('')
 const validationError = ref('')
+const activeQuickCommandName = ref('')
 
 const modePlaceholder = computed(() => mode.value === 'hex' ? (props.hexPlaceholder ?? 'Enter HEX data') : (props.asciiPlaceholder ?? 'Enter ASCII string'))
 
@@ -136,7 +138,7 @@ function setMode(m: 'hex' | 'ascii') {
 function onInput(e: any) {
   let val = e.detail.value as string
   if (mode.value === 'hex') val = val.toUpperCase().replace(/[^0-9A-F\s]/g, '')
-  inputValue.value = val; validateInput(val)
+  inputValue.value = val; activeQuickCommandName.value = ''; validateInput(val)
 }
 
 function onBlur() {
@@ -150,7 +152,7 @@ function validateInput(val: string) {
   } else { validationError.value = '' }
 }
 
-function clearInput() { inputValue.value = ''; validationError.value = '' }
+function clearInput() { inputValue.value = ''; validationError.value = ''; activeQuickCommandName.value = '' }
 
 async function pasteInput() {
   try {
@@ -164,14 +166,25 @@ async function pasteInput() {
 }
 
 function applyQuickCommand(cmd: QuickCommand) {
-  mode.value = cmd.mode; inputValue.value = cmd.data; validateInput(cmd.data)
+  mode.value = cmd.mode; inputValue.value = cmd.data; activeQuickCommandName.value = cmd.name; validateInput(cmd.data)
+}
+
+function commandTypeLabel(cmd: QuickCommand): string {
+  const map: Record<string, string> = {
+    query: 'GET',
+    control: 'CTRL',
+    config: 'CFG',
+    mock: 'MOCK',
+    custom: 'CMD',
+  }
+  return map[cmd.commandType ?? 'custom'] ?? 'CMD'
 }
 
 async function onSend() {
   if (!canSend.value || props.isSending) return
   const buf = parsedBuffer.value
   if (!buf) return
-  emit('send', buf)
+  emit('send', buf, activeQuickCommandName.value || undefined)
 }
 </script>
 
@@ -219,6 +232,7 @@ async function onSend() {
   &--add { background: rgba(var(--color-accent-rgb), 0.08); border-color: rgba(var(--color-accent-rgb), 0.2); }
 }
 .cmd-name { font-size: 12px; color: var(--color-primary); font-weight: 500; }
+.cmd-type { font-size: 9px; color: var(--color-accent); font-weight: 700; padding: 1px 4px; border-radius: 3px; background: rgba(var(--color-accent-rgb), 0.1); }
 .cmd-add-icon { font-size: 14px; color: var(--color-accent); font-weight: 300; }
 .cmd-add-text { font-size: 12px; color: var(--color-accent); }
 .quick-empty-add { display: flex; }
