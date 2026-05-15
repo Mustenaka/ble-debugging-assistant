@@ -1,4 +1,5 @@
 import { normalizeUUID, shortUUID } from './hex'
+import { exportLogsToCSV } from './buffer'
 import type { LogEntry, BleProtocolSample, DeviceReportInfo } from './buffer'
 
 export interface ProtocolFieldDoc {
@@ -239,6 +240,233 @@ export interface AiExportInfo {
   profiles: ProtocolProfileDoc[]
   logs: LogEntry[]
   samples: BleProtocolSample[]
+}
+
+export type DebugPackPurpose = 'ai' | 'mock' | 'share' | 'archive'
+
+export interface DebugPackOptions {
+  purpose: DebugPackPurpose
+  notes?: string
+  includeRawLogs?: boolean
+  redactDeviceId?: boolean
+}
+
+export interface DebugPackInfo extends AiExportInfo {
+  options: DebugPackOptions
+}
+
+function purposeTask(purpose: DebugPackPurpose): string {
+  if (purpose === 'mock') {
+    return 'Build or verify a BLE mock plan from the captured device topology, endpoint examples, saved samples, and recent traffic.'
+  }
+  if (purpose === 'share') {
+    return 'Help another engineer reproduce this BLE debugging session and understand the known endpoints, logs, and examples.'
+  }
+  if (purpose === 'archive') {
+    return 'Archive this BLE debugging session as a reusable protocol and troubleshooting record.'
+  }
+  return 'Analyze this BLE device protocol, identify request/response relationships, explain likely fields, and suggest debugging or mock improvements.'
+}
+
+function deviceForExport(device: DeviceReportInfo, redactDeviceId?: boolean): DeviceReportInfo {
+  return {
+    ...device,
+    deviceId: redactDeviceId ? 'redacted' : device.deviceId,
+  }
+}
+
+function endpointId(serviceUUID: string, characteristicUUID: string): string {
+  return `${normalizeUUID(serviceUUID)}::${normalizeUUID(characteristicUUID)}`
+}
+
+function buildEndpointCatalog(info: AiExportInfo) {
+  const logsByEndpoint = new Map<string, LogEntry[]>()
+  for (const log of info.logs) {
+    if (!log.serviceUUID || !log.characteristicUUID) continue
+    const key = endpointId(log.serviceUUID, log.characteristicUUID)
+    logsByEndpoint.set(key, [...(logsByEndpoint.get(key) ?? []), log])
+  }
+
+  return info.device.services.flatMap((service) => {
+    const serviceDoc = info.profiles
+      .flatMap((profile) => profile.services)
+      .find((doc) => normalizeUUID(doc.uuid) === normalizeUUID(service.uuid))
+
+    return service.characteristics.map((ch) => {
+      const charDoc = serviceDoc?.characteristics.find((doc) => normalizeUUID(doc.uuid) === normalizeUUID(ch.uuid))
+      const key = endpointId(service.uuid, ch.uuid)
+      const endpointLogs = logsByEndpoint.get(key) ?? []
+      const endpointSamples = info.samples.filter((sample) =>
+        normalizeUUID(sample.serviceUUID) === normalizeUUID(service.uuid) &&
+        normalizeUUID(sample.characteristicUUID) === normalizeUUID(ch.uuid)
+      )
+      const lastTx = [...endpointLogs].reverse().find((log) => log.direction === 'TX')
+      const lastRx = [...endpointLogs].reverse().find((log) => log.direction === 'RX')
+
+      return {
+        serviceUUID: service.uuid,
+        characteristicUUID: ch.uuid,
+        serviceName: serviceDoc?.name,
+        characteristicName: charDoc?.name,
+        direction: charDoc?.direction,
+        valueFormat: charDoc?.valueFormat,
+        properties: ch.properties,
+        operationIds: charDoc?.interfaces.map((api) => api.operationId).filter(Boolean) ?? [],
+        sampleCount: endpointSamples.length,
+        logCount: endpointLogs.length,
+        lastTx: lastTx ? { timestamp: lastTx.timestamp, hex: lastTx.hex, ascii: lastTx.ascii } : null,
+        lastRx: lastRx ? { timestamp: lastRx.timestamp, hex: lastRx.hex, ascii: lastRx.ascii } : null,
+      }
+    })
+  })
+}
+
+export function buildDebugPack(info: DebugPackInfo) {
+  const device = deviceForExport(info.device, info.options.redactDeviceId)
+  const baseInfo: AiExportInfo = { ...info, device }
+  const endpointInfo: AiExportInfo = info.options.includeRawLogs === false ? { ...baseInfo, logs: [] } : baseInfo
+  const protocolSpec = {
+    kind: 'ble-protocol-spec',
+    version: '0.1.0',
+    device,
+    matchedProfiles: info.profiles.map((profile) => ({
+      id: profile.id,
+      name: profile.name,
+      version: profile.version,
+      summary: profile.summary,
+      services: profile.services,
+    })),
+    endpoints: buildEndpointCatalog(endpointInfo),
+    savedSamples: info.samples,
+  }
+
+  return {
+    kind: 'ble-debug-pack',
+    version: '0.1.0',
+    generatedAt: new Date().toISOString(),
+    purpose: info.options.purpose,
+    notes: info.options.notes?.trim() || '',
+    task: purposeTask(info.options.purpose),
+    device,
+    endpoints: buildEndpointCatalog(endpointInfo),
+    matchedProfiles: protocolSpec.matchedProfiles,
+    savedSamples: info.samples,
+    logs: info.options.includeRawLogs === false ? [] : info.logs,
+    protocolSpec,
+    mockPack: buildMockPack(baseInfo),
+  }
+}
+
+export function buildDebugPackMarkdown(info: DebugPackInfo): string {
+  const pack = buildDebugPack(info)
+  const csvDevice = {
+    name: pack.device.name,
+    deviceId: pack.device.deviceId,
+    txBytes: info.logs.filter((log) => log.direction === 'TX').reduce((sum, log) => sum + log.rawLength, 0),
+    rxBytes: info.logs.filter((log) => log.direction === 'RX').reduce((sum, log) => sum + log.rawLength, 0),
+  }
+  const logsCsv = info.options.includeRawLogs === false ? '' : exportLogsToCSV(info.logs, csvDevice)
+  const recentLogs = info.options.includeRawLogs === false ? [] : info.logs.slice(-80)
+  const lines: string[] = [
+    '# BLE Debug Pack',
+    '',
+    '## Task',
+    '',
+    pack.task,
+    '',
+    '## Notes',
+    '',
+    pack.notes || 'No notes provided.',
+    '',
+    '## Device',
+    '',
+    `- Name: ${pack.device.name}`,
+    `- Device ID: ${pack.device.deviceId || 'unknown'}`,
+    `- RSSI: ${pack.device.rssi != null ? `${pack.device.rssi} dBm` : 'unknown'}`,
+    `- MTU: ${pack.device.mtu ?? 'unknown'}`,
+    `- Generated At: ${pack.generatedAt}`,
+    '',
+    '## Matched Profiles',
+    '',
+  ]
+
+  if (!pack.matchedProfiles.length) {
+    lines.push('- No built-in profile matched. Treat services as vendor-specific until annotated.')
+  } else {
+    for (const profile of pack.matchedProfiles) {
+      lines.push(`- ${profile.name} (${profile.id}, v${profile.version}): ${profile.summary ?? ''}`)
+    }
+  }
+
+  lines.push('', '## Endpoint Catalog', '')
+  if (!pack.endpoints.length) {
+    lines.push('- No loaded endpoints. Expand services before exporting for a fuller pack.')
+  } else {
+    for (const endpoint of pack.endpoints) {
+      const label = endpoint.characteristicName || shortUUID(endpoint.characteristicUUID)
+      lines.push(`### ${label}`)
+      lines.push(`- Service: ${endpoint.serviceName || shortUUID(endpoint.serviceUUID)} (\`${endpoint.serviceUUID}\`)`)
+      lines.push(`- Characteristic: \`${endpoint.characteristicUUID}\``)
+      lines.push(`- Direction: ${endpoint.direction || 'unknown'}`)
+      lines.push(`- Value Format: ${endpoint.valueFormat || 'unknown'}`)
+      lines.push(`- Operations: ${endpoint.operationIds.length ? endpoint.operationIds.join(', ') : 'none'}`)
+      lines.push(`- Samples: ${endpoint.sampleCount}`)
+      lines.push(`- Logs: ${endpoint.logCount}`)
+      if (endpoint.lastTx) lines.push(`- Last TX: \`${endpoint.lastTx.hex}\``)
+      if (endpoint.lastRx) lines.push(`- Last RX: \`${endpoint.lastRx.hex}\``)
+      lines.push('')
+    }
+  }
+
+  lines.push('## Saved Samples', '')
+  if (!pack.savedSamples.length) {
+    lines.push('- No saved samples yet. Long press a TX/RX log entry in the console to save one.')
+  } else {
+    for (const sample of pack.savedSamples) {
+      lines.push(`- ${sample.name} [${sample.direction}] ${shortUUID(sample.serviceUUID)} / ${shortUUID(sample.characteristicUUID)}: \`${sample.hex}\``)
+    }
+  }
+
+  lines.push('', '## Recent Logs', '')
+  if (info.options.includeRawLogs === false) {
+    lines.push('- Raw logs were excluded by export option.')
+  } else if (!recentLogs.length) {
+    lines.push('- No logs captured.')
+  } else {
+    for (const log of recentLogs) {
+      if (log.direction === 'SYS') {
+        lines.push(`- ${new Date(log.timestamp).toISOString()} SYS ${log.ascii}`)
+      } else {
+        lines.push(`- ${new Date(log.timestamp).toISOString()} ${log.direction} ${logEndpoint(log)} ${log.rawLength}B HEX=\`${log.hex}\` ASCII=\`${log.ascii}\``)
+      }
+    }
+  }
+
+  lines.push(
+    '',
+    '## Artifact: device.json',
+    '',
+    fenceJson(pack.device),
+    '',
+    '## Artifact: protocol.json',
+    '',
+    fenceJson(pack.protocolSpec),
+    '',
+    '## Artifact: mock.json',
+    '',
+    fenceJson(pack.mockPack),
+    '',
+    '## Artifact: samples.json',
+    '',
+    fenceJson(pack.savedSamples),
+  )
+
+  if (logsCsv) {
+    lines.push('', '## Artifact: logs.csv', '', '```csv', logsCsv, '```')
+  }
+
+  lines.push('', '## Artifact: debug-pack.json', '', fenceJson(pack))
+  return lines.join('\n')
 }
 
 export function buildAiDebugReportMarkdown(info: AiExportInfo): string {

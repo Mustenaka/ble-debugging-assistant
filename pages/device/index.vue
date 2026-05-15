@@ -206,16 +206,28 @@
     <view v-if="showExportModal" class="modal-overlay" @click="showExportModal = false">
       <view class="modal-card" @click.stop>
         <text class="modal-title">{{ t('device.export.title') }}</text>
+        <view class="export-summary">
+          <text class="export-summary-title">{{ t('device.export.summaryTitle') }}</text>
+          <text class="export-summary-text">{{ t('device.export.summaryDesc') }}</text>
+        </view>
         <view class="fmt-tabs">
           <view
-            v-for="fmt in exportFormats"
-            :key="fmt.value"
+            v-for="purpose in exportPurposes"
+            :key="purpose.value"
             class="fmt-tab"
-            :class="{ 'fmt-tab--active': exportFormat === fmt.value }"
-            @click="exportFormat = fmt.value"
+            :class="{ 'fmt-tab--active': exportPurpose === purpose.value }"
+            @click="exportPurpose = purpose.value"
           >
-            <text class="fmt-tab-text">{{ fmt.label }}</text>
+            <text class="fmt-tab-text">{{ purpose.label }}</text>
           </view>
+        </view>
+        <view class="option-row" @click="includeRawLogs = !includeRawLogs">
+          <text class="option-check">{{ includeRawLogs ? '✓' : '' }}</text>
+          <text class="option-text">{{ t('device.export.includeRawLogs') }}</text>
+        </view>
+        <view class="option-row" @click="redactDeviceId = !redactDeviceId">
+          <text class="option-check">{{ redactDeviceId ? '✓' : '' }}</text>
+          <text class="option-text">{{ t('device.export.redactDeviceId') }}</text>
         </view>
         <view class="notes-section">
           <text class="notes-label">{{ t('device.export.notesLabel') }}</text>
@@ -253,16 +265,14 @@ import type { BleCharacteristic } from '../../services/bleManager'
 import { shortUUID } from '../../utils/hex'
 import {
   saveLogsToFile, buildDeviceReportFilename,
-  exportDeviceReportToText, exportDeviceReportToMarkdown, exportDeviceReportToCSV,
   type DeviceReportInfo,
 } from '../../utils/buffer'
 import { matchBuiltinProtocolDocs } from '../../services/builtinProtocolDocs'
 import {
-  buildAiDebugReportMarkdown,
-  buildMockPackJson,
-  buildProtocolSpecJson,
+  buildDebugPackMarkdown,
   getCharacteristicDoc,
   getServiceDoc,
+  type DebugPackPurpose,
 } from '../../utils/protocolDocs'
 import SettingsPanel from '../../components/SettingsPanel.vue'
 import RssiChart from '../../components/RssiChart.vue'
@@ -282,17 +292,16 @@ const mtuInputs = reactive<Record<string, string>>({})
 // ── 导出 ──
 const showExportModal = ref(false)
 const exportNotes = ref('')
-type ExportFormat = 'txt' | 'md' | 'csv' | 'ai-md' | 'spec-json' | 'mock-json'
-const exportFormat = ref<ExportFormat>('txt')
+const exportPurpose = ref<DebugPackPurpose>('ai')
+const includeRawLogs = ref(true)
+const redactDeviceId = ref(false)
 const isExporting = ref(false)
 const exportTargetId = ref<string>('')
-const exportFormats = computed<{ value: ExportFormat; label: string }[]>(() => [
-  { value: 'txt', label: t('device.export.fmtTxt') },
-  { value: 'md',  label: t('device.export.fmtMd') },
-  { value: 'csv', label: t('device.export.fmtCsv') },
-  { value: 'ai-md', label: t('device.export.fmtAiMd') },
-  { value: 'spec-json', label: t('device.export.fmtSpecJson') },
-  { value: 'mock-json', label: t('device.export.fmtMockJson') },
+const exportPurposes = computed<{ value: DebugPackPurpose; label: string }[]>(() => [
+  { value: 'ai', label: t('device.export.purposeAi') },
+  { value: 'mock', label: t('device.export.purposeMock') },
+  { value: 'share', label: t('device.export.purposeShare') },
+  { value: 'archive', label: t('device.export.purposeArchive') },
 ])
 
 // ── 服务树状态（每 deviceId 独立）───────────────────────────────────────────
@@ -483,6 +492,9 @@ function handleDisconnect(deviceId: string, name: string) {
 function openExport(deviceId: string) {
   exportTargetId.value = deviceId
   exportNotes.value = ''
+  exportPurpose.value = 'ai'
+  includeRawLogs.value = true
+  redactDeviceId.value = false
   showExportModal.value = true
 }
 
@@ -527,27 +539,20 @@ async function confirmExport() {
     }
 
     const matchedProfiles = matchBuiltinProtocolDocs(reportInfo.services.map((s) => s.uuid)).profiles
-    const aiInfo = {
+    const content = buildDebugPackMarkdown({
       device: reportInfo,
       profiles: matchedProfiles,
       logs: session.logs,
       samples: session.savedSamples,
-    }
-
-    const fmt = exportFormat.value
-    const mimeType = fmt === 'csv'
-      ? 'text/csv'
-      : fmt.includes('json') ? 'application/json' : 'text/plain'
-    const content =
-      fmt === 'md'        ? exportDeviceReportToMarkdown(reportInfo) :
-      fmt === 'csv'       ? exportDeviceReportToCSV(reportInfo) :
-      fmt === 'ai-md'     ? buildAiDebugReportMarkdown(aiInfo) :
-      fmt === 'spec-json' ? buildProtocolSpecJson(aiInfo) :
-      fmt === 'mock-json' ? buildMockPackJson(aiInfo) :
-                            exportDeviceReportToText(reportInfo)
-    const ext: 'txt' | 'md' | 'csv' | 'json' =
-      fmt === 'csv' ? 'csv' : fmt.includes('json') ? 'json' : fmt.includes('md') ? 'md' : 'txt'
-    const filename = buildDeviceReportFilename(session.device.name, ext)
+      options: {
+        purpose: exportPurpose.value,
+        notes: exportNotes.value,
+        includeRawLogs: includeRawLogs.value,
+        redactDeviceId: redactDeviceId.value,
+      },
+    })
+    const mimeType = 'text/markdown'
+    const filename = buildDeviceReportFilename(session.device.name, 'md').replace('BLE_DeviceReport_', 'BLE_DebugPack_')
     showExportModal.value = false
     const path = await saveLogsToFile(content, filename, mimeType)
 
@@ -818,6 +823,9 @@ async function confirmExport() {
   display: flex; flex-direction: column; gap: 16px;
 }
 .modal-title { font-size: 16px; font-weight: 700; color: var(--text-primary); }
+.export-summary { display: flex; flex-direction: column; gap: 4px; }
+.export-summary-title { font-size: 12px; font-weight: 700; color: var(--color-primary); }
+.export-summary-text { font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
 .fmt-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
 .fmt-tab {
   flex: 1 1 30%; min-width: 96px; height: 36px; display: flex; align-items: center; justify-content: center;
@@ -826,6 +834,16 @@ async function confirmExport() {
   &--active { background: rgba(var(--color-primary-rgb), 0.1); border-color: rgba(var(--color-primary-rgb), 0.4); .fmt-tab-text { color: var(--color-primary); } }
 }
 .fmt-tab-text { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.option-row {
+  display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 6px 8px;
+  background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 8px;
+}
+.option-check {
+  width: 18px; height: 18px; display: flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(var(--color-primary-rgb), 0.45); border-radius: 4px;
+  color: var(--color-primary); font-size: 12px; font-weight: 700;
+}
+.option-text { font-size: 12px; color: var(--text-secondary); }
 .notes-section { display: flex; flex-direction: column; gap: 6px; }
 .notes-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; }
 .notes-input { background: var(--bg-input); border: 1px solid var(--border-default); border-radius: 8px; padding: 10px 12px; font-size: 13px; color: var(--text-primary); width: 100%; min-height: 72px; }

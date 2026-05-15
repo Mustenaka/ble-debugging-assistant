@@ -10,9 +10,15 @@ All notable changes to this project are documented here.
 
 ### Added
 
+- Added the first offline Debug Pack export flow, generating one AI/Mock-friendly Markdown pack with embedded device, protocol, mock, sample, and log artifacts.
 - Upgraded quick commands toward a Postman-like saved request model with name, type, description, content, and content format.
 - Added command type badges in the quick command list.
 - Added quick-command names to TX log labels when a saved command is applied and sent.
+
+### Changed
+
+- Consolidated the Device page export UI around a single "Export Debug Pack" entry with purpose, raw-log, and device-ID redaction options.
+- Removed the standalone log export action from the Debug console so exports are routed through the Debug Pack workflow.
 
 ## 2026-05-14
 

@@ -44,8 +44,6 @@
         <view class="menu-divider" />
         <view class="menu-item" @click="handleCharHistory"><text class="mi-icon">◈</text><text class="mi-text">{{ t('debug.moreMenu.charHistory') }}</text></view>
         <view class="menu-divider" />
-        <view class="menu-item" @click="handleExportLog"><text class="mi-icon">⬆</text><text class="mi-text">{{ t('debug.moreMenu.export') }}</text></view>
-        <view class="menu-divider" />
         <view class="menu-item" @click="handleClearLog"><text class="mi-icon danger">✕</text><text class="mi-text danger">{{ t('debug.moreMenu.clearLog') }}</text></view>
         <view class="menu-divider" />
         <view class="menu-item" @click="openSettings"><text class="mi-icon">⚙</text><text class="mi-text">{{ t('settings.title') }}</text></view>
@@ -69,8 +67,8 @@
           :auto-label="t('log.autoScroll')"
           :waiting-text="t('log.waiting')"
           :new-msg-text="t('log.newMessages')"
+          :show-export="false"
           @clear="bleStore.clearLogs()"
-          @export="handleExportLog"
           @save-sample="handleSaveLogSample"
         />
       </view>
@@ -265,7 +263,7 @@ import { useAppStore } from '../../store/appStore'
 import { useI18n } from '../../composables/useI18n'
 import { useResponsive } from '../../composables/useResponsive'
 import { isValidHex, normalizeHex, shortUUID } from '../../utils/hex'
-import { exportLogsToText, exportLogsToCSV, saveLogsToFile, buildExportFilename, type ExportDeviceInfo, type QuickCommandType } from '../../utils/buffer'
+import type { QuickCommandType } from '../../utils/buffer'
 import { useProtocolStore } from '../../store/protocolStore'
 import BleLogPanel from '../../components/BleLogPanel.vue'
 import HexInput from '../../components/HexInput.vue'
@@ -377,116 +375,6 @@ async function handleReadChar() {
     await bleManager.readCharacteristic(session.device.deviceId, session.activeServiceId, session.activeCharacteristicId)
     bleStore.addSysLog(t('debug.readComplete'))
   } catch (e: any) { uni.showToast({ title: e.message ?? t('debug.readFailed'), icon: 'none' }) }
-}
-
-async function handleExportLog() {
-  showMoreMenu.value = false
-  if (!bleStore.logs.length) { uni.showToast({ title: t('debug.noLogs'), icon: 'none' }); return }
-
-  const deviceInfo: ExportDeviceInfo = {
-    name: bleStore.connectedDevice?.name ?? 'Unknown',
-    deviceId: bleStore.connectedDevice?.deviceId ?? '',
-    txBytes: bleStore.txBytes,
-    rxBytes: bleStore.rxBytes,
-  }
-
-  uni.showActionSheet({
-    itemList: [t('settings.exportTxt'), t('settings.exportCsv')],
-    success: async (res) => {
-      try {
-        let content: string
-        let filename: string
-        let mimeType: string
-        if (res.tapIndex === 1) {
-          content = exportLogsToCSV(bleStore.logs, deviceInfo)
-          filename = buildExportFilename(deviceInfo.name, 'csv')
-          mimeType = 'text/csv'
-        } else {
-          content = exportLogsToText(bleStore.logs, deviceInfo)
-          filename = buildExportFilename(deviceInfo.name, 'txt')
-          mimeType = 'text/plain'
-        }
-        console.log('[Export] start —', filename, '| logs:', bleStore.logs.length, '| content length:', content.length)
-        bleStore.addSysLog(`⬆ 导出开始: ${filename} (${bleStore.logs.length} 条)`)
-
-        const path = await saveLogsToFile(content, filename, mimeType)
-        console.log('[Export] saved —', path)
-        bleStore.addSysLog(`✓ 导出成功: ${path}`)
-
-        // #ifdef APP-PLUS
-        if (plus.os.name === 'Android') {
-          // Android 7+ 禁止 file:// URI 跨进程传递，必须通过 FileProvider 生成 content:// URI
-          // HBuilderX 已内置 FileProvider，authority = packageName + '.dc.fileprovider'
-          console.log('[Export] Android share via Java Intent + FileProvider — path:', path)
-          try {
-            const Intent       = plus.android.importClass('android.content.Intent')
-            const File         = plus.android.importClass('java.io.File')
-            const BuildVersion = plus.android.importClass('android.os.Build$VERSION')
-            const activity     = plus.android.runtimeMainActivity()
-
-            const intent = new Intent(Intent.ACTION_SEND)
-            intent.setType(mimeType)
-
-            const file = new File(path)
-            if (BuildVersion.SDK_INT >= 24) {
-              const FileProvider = plus.android.importClass('androidx.core.content.FileProvider')
-              const authority    = activity.getPackageName() + '.dc.fileprovider'
-              console.log('[Export] FileProvider authority:', authority)
-              const uri = FileProvider.getUriForFile(activity, authority, file)
-              console.log('[Export] content:// URI:', uri.toString())
-              intent.putExtra(Intent.EXTRA_STREAM, uri)
-              intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            } else {
-              const Uri = plus.android.importClass('android.net.Uri')
-              intent.putExtra(Intent.EXTRA_STREAM, Uri.fromFile(file))
-            }
-
-            const chooser = Intent.createChooser(intent, t('debug.exportShare'))
-            activity.startActivity(chooser)
-            console.log('[Export] share chooser started')
-          } catch (shareErr: any) {
-            console.error('[Export] Java share error —', shareErr?.message ?? JSON.stringify(shareErr))
-            bleStore.addSysLog(`⚠ 分享失败: ${shareErr?.message ?? '未知'}`)
-            uni.showModal({
-              title: t('debug.exportTitle'),
-              content: `${filename}\n\n${t('debug.exportSaved')}${path}`,
-              showCancel: false,
-              confirmText: t('common.ok'),
-            })
-          }
-        } else {
-          // iOS: plus.share 可正常传递沙盒内文件
-          console.log('[Export] iOS share via plus.share.sendWithSystem — path:', path)
-          plus.share.sendWithSystem(
-            { type: 'file', href: path },
-            () => { console.log('[Export] iOS share done') },
-            (e: any) => {
-              console.warn('[Export] iOS share failed —', JSON.stringify(e))
-              uni.showModal({
-                title: t('debug.exportTitle'),
-                content: `${filename}\n\n${t('debug.exportSaved')}${path}`,
-                showCancel: false,
-                confirmText: t('common.ok'),
-              })
-            },
-          )
-        }
-        // #endif
-        // #ifndef APP-PLUS
-        uni.showModal({
-          title: t('debug.exportTitle'),
-          content: `${filename}\n\n${t('debug.exportSaved')}${path}`,
-          showCancel: false,
-          confirmText: t('common.ok'),
-        })
-        // #endif
-      } catch (e: any) {
-        console.error('[Export] failed —', e?.message, JSON.stringify(e))
-        bleStore.addSysLog(`⚠ 导出失败: ${e?.message ?? '未知错误'}`)
-        uni.showToast({ title: t('debug.exportFailed'), icon: 'none' })
-      }
-    },
-  })
 }
 
 function handleClearLog() {

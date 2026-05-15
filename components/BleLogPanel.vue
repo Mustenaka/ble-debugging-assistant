@@ -27,7 +27,7 @@
         </view>
 
         <view class="log-actions">
-          <view class="action-btn" @click="$emit('export')"><text class="action-icon">⬇</text></view>
+          <view v-if="showExport !== false" class="action-btn" @click="$emit('export')"><text class="action-icon">⬇</text></view>
           <view class="action-btn action-btn--danger" @click="$emit('clear')"><text class="action-icon">✕</text></view>
         </view>
       </view>
@@ -100,6 +100,7 @@ const props = defineProps<{
   autoLabel?: string
   waitingText?: string
   newMsgText?: string
+  showExport?: boolean
 }>()
 
 defineEmits<{
