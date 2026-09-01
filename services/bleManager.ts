@@ -112,7 +112,6 @@ class BleManager {
   private deviceStates: Map<string, BleDeviceState> = new Map()
   private reconnectConfigs: Map<string, ReconnectConfig> = new Map()
   private reconnectTimers: Map<string, ReturnType<typeof setTimeout>> = new Map()
-  private heartbeatTimers: Map<string, ReturnType<typeof setInterval>> = new Map()
 
   // 已发现设备列表
   private discoveredDevices: Map<string, BleDevice> = new Map()
@@ -172,7 +171,6 @@ class BleManager {
   private clearDeviceState(deviceId: string) {
     this.deviceStates.delete(deviceId)
     this.reconnectConfigs.delete(deviceId)
-    this._stopHeartbeat(deviceId)
     this._clearReconnectTimer(deviceId)
   }
 
@@ -367,7 +365,6 @@ class BleManager {
   }
 
   async disconnect(deviceId: string): Promise<void> {
-    this._stopHeartbeat(deviceId)
     const cfg = this.reconnectConfigs.get(deviceId)
     if (cfg) cfg.enabled = false
 
@@ -544,38 +541,6 @@ class BleManager {
     }
   }
 
-  // ── 心跳包（每设备独立）──────────────────────────────────────────────────
-
-  startHeartbeat(
-    deviceId: string,
-    serviceId: string,
-    characteristicId: string,
-    payload: ArrayBuffer,
-    intervalMs = 5000
-  ) {
-    this._stopHeartbeat(deviceId)
-    const timer = setInterval(async () => {
-      if (!this.isDeviceConnected(deviceId)) {
-        this._stopHeartbeat(deviceId)
-        return
-      }
-      try {
-        await this.write(deviceId, serviceId, characteristicId, payload, false)
-      } catch {
-        // 心跳失败静默处理
-      }
-    }, intervalMs)
-    this.heartbeatTimers.set(deviceId, timer)
-  }
-
-  private _stopHeartbeat(deviceId: string) {
-    const timer = this.heartbeatTimers.get(deviceId)
-    if (timer) {
-      clearInterval(timer)
-      this.heartbeatTimers.delete(deviceId)
-    }
-  }
-
   // ── 自动重连（每设备独立）────────────────────────────────────────────────
 
   enableAutoReconnect(deviceId: string, maxAttempts = 5, intervalMs = 3000) {
@@ -632,7 +597,6 @@ class BleManager {
       const { deviceId, connected } = res
       this.connectionListeners.forEach((fn) => fn(deviceId, connected))
       if (!connected && this.deviceStates.get(deviceId) === BleDeviceState.CONNECTED) {
-        this._stopHeartbeat(deviceId)
         this.setDeviceState(deviceId, BleDeviceState.DISCONNECTED)
         this._triggerReconnect(deviceId)
         // 清理状态（reconnect 完成前保留 config 和 timer）
@@ -684,7 +648,6 @@ class BleManager {
 
   private _clearAllTimers() {
     if (this.scanTimer) { clearTimeout(this.scanTimer); this.scanTimer = null }
-    this.heartbeatTimers.forEach((_, id) => this._stopHeartbeat(id))
     this.reconnectTimers.forEach((_, id) => this._clearReconnectTimer(id))
   }
 }

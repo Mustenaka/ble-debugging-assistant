@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, reactive } from 'vue'
 import {
   bleManager,
   BleAdapterState,
@@ -8,7 +8,7 @@ import {
   type BleService,
   type BleCharacteristic,
 } from '../services/bleManager'
-import { bufToHex, bufToAscii, shortUUID } from '../utils/hex'
+import { bufToHex, bufToAscii, shortUUID, hexToBuf, asciiToBuf, normalizeUUID } from '../utils/hex'
 import {
   RingBuffer,
   type LogEntry,
@@ -22,6 +22,24 @@ import {
   saveProtocolSample,
   type RecentDevice,
 } from '../utils/buffer'
+import {
+  beginSessionRecord,
+  recordSessionLog,
+  recordSessionRssi,
+  recordSessionMtu,
+  recordSessionHeartbeat,
+  endSessionRecord,
+  flushAllSessionRecords,
+} from '../utils/deviceArchive'
+import {
+  HEARTBEAT_LABEL,
+  HEARTBEAT_ACK_LABEL,
+  createHeartbeatRuntime,
+  saveHeartbeatConfig,
+  heartbeatLossPercent,
+  type HeartbeatConfig,
+  type HeartbeatRuntime,
+} from '../utils/heartbeat'
 
 export type DisplayMode = 'hex' | 'ascii'
 
@@ -46,6 +64,7 @@ export interface DeviceSession {
   notifyEnabled: boolean
   rxDisplayMode: DisplayMode
   txDisplayMode: DisplayMode
+  heartbeat: HeartbeatRuntime
 }
 
 function createSession(device: BleDevice): DeviceSession {
@@ -68,6 +87,8 @@ function createSession(device: BleDevice): DeviceSession {
     notifyEnabled: false,
     rxDisplayMode: 'hex',
     txDisplayMode: 'hex',
+    // reactive: 心跳统计需要在 UI 中实时刷新
+    heartbeat: reactive(createHeartbeatRuntime()),
   }
 }
 
@@ -145,6 +166,8 @@ export const useBleStore = defineStore('ble', () => {
     return activeCharacteristics.value.find((c) => c.uuid === charId) ?? null
   })
 
+  const activeHeartbeat = computed<HeartbeatRuntime | null>(() => activeSession.value?.heartbeat ?? null)
+
   // ── 内部辅助：获取可写会话 ───────────────────────────────────────────────
 
   function getSession(deviceId: string): DeviceSession | null {
@@ -188,8 +211,10 @@ export const useBleStore = defineStore('ble', () => {
         serviceUUID: serviceId,
         characteristicUUID: characteristicId,
       }
+      _matchHeartbeatAck(deviceId, session, characteristicId, hex, entry)
       session.logBuffer.push(entry)
       session.logs = session.logBuffer.getAll()
+      recordSessionLog(deviceId, entry)
       _addCharHistory(session, characteristicId, hex)
       triggerSessionUpdate()
     })
@@ -198,7 +223,9 @@ export const useBleStore = defineStore('ble', () => {
       if (!connected) {
         const session = getSession(deviceId)
         if (!session) return
+        stopHeartbeatTest(deviceId, true)
         _addSysLogToSession(session, `设备断开连接: ${session.device.name}`)
+        endSessionRecord(deviceId, 'lost')
         _stopRssiPoll(session)
         session.deviceState = BleDeviceState.DISCONNECTED
         // 断开后从 sessions 中移除
@@ -249,6 +276,7 @@ export const useBleStore = defineStore('ble', () => {
       const session = createSession(device)
       sessions.value.set(device.deviceId, session)
       activeSessionId.value = device.deviceId
+      beginSessionRecord(device.deviceId, device.name)
       triggerSessionUpdate()
 
       saveRecentDevice({ deviceId: device.deviceId, name: device.name, lastConnected: Date.now() })
@@ -270,6 +298,8 @@ export const useBleStore = defineStore('ble', () => {
     const session = getSession(id)
     const name = session?.device.name ?? id
     if (session) _stopRssiPoll(session)
+    stopHeartbeatTest(id, true)
+    endSessionRecord(id, 'user')
     try {
       await bleManager.disconnect(id)
     } catch {
@@ -359,6 +389,7 @@ export const useBleStore = defineStore('ble', () => {
     }
     session.logBuffer.push(entry)
     session.logs = session.logBuffer.getAll()
+    recordSessionLog(deviceId, entry)
     triggerSessionUpdate()
   }
 
@@ -436,8 +467,160 @@ export const useBleStore = defineStore('ble', () => {
     if (!session) return
     const actual = await bleManager.negotiateMTU(id, mtu)
     session.currentMtu = actual
+    recordSessionMtu(id, actual)
     triggerSessionUpdate()
     return actual
+  }
+
+  // ── 心跳持续连接测试（每 session 独立）───────────────────────────────────
+
+  function _cleanHexStr(s: string): string {
+    return s.replace(/[^0-9A-Fa-f]/g, '').toUpperCase()
+  }
+
+  function _matchHeartbeatAck(
+    deviceId: string,
+    session: DeviceSession,
+    characteristicId: string,
+    hex: string,
+    entry: LogEntry,
+  ) {
+    const hb = session.heartbeat
+    const cfg = hb.config
+    if (!hb.running || !cfg || !cfg.expectResponse || hb.pendingSentAt === null) return
+    if (
+      cfg.responseCharacteristicUUID &&
+      normalizeUUID(cfg.responseCharacteristicUUID) !== normalizeUUID(characteristicId)
+    ) return
+    if (cfg.responseMatchHex && !_cleanHexStr(hex).startsWith(_cleanHexStr(cfg.responseMatchHex))) return
+
+    const rtt = Date.now() - hb.pendingSentAt
+    hb.pendingSentAt = null
+    if (hb.timeoutTimer) {
+      clearTimeout(hb.timeoutTimer)
+      hb.timeoutTimer = null
+    }
+    hb.acked++
+    hb.consecutiveMissed = 0
+    hb.lastRttMs = rtt
+    hb.rttSum += rtt
+    hb.rttMinMs = hb.rttMinMs === null ? rtt : Math.min(hb.rttMinMs, rtt)
+    hb.rttMaxMs = hb.rttMaxMs === null ? rtt : Math.max(hb.rttMaxMs, rtt)
+    hb.rttAvgMs = Math.round(hb.rttSum / hb.acked)
+    hb.rttHistory.push({ time: Date.now(), rtt })
+    if (hb.rttHistory.length > 60) hb.rttHistory.splice(0, 1)
+    entry.label = `${HEARTBEAT_ACK_LABEL} · ${rtt}ms`
+    entry.operationId = 'heartbeat'
+    recordSessionHeartbeat(deviceId, { type: 'acked', rttMs: rtt })
+  }
+
+  async function _heartbeatTick(deviceId: string) {
+    const session = getSession(deviceId)
+    if (!session) return
+    const hb = session.heartbeat
+    const cfg = hb.config
+    if (!hb.running || !cfg) return
+    if (!bleManager.isDeviceConnected(deviceId)) {
+      stopHeartbeatTest(deviceId, true)
+      return
+    }
+    let payload: ArrayBuffer
+    try {
+      payload = cfg.payloadMode === 'hex' ? hexToBuf(cfg.payload) : asciiToBuf(cfg.payload)
+    } catch {
+      _addSysLogToSession(session, '♥ 心跳内容格式错误，测试已停止')
+      stopHeartbeatTest(deviceId)
+      return
+    }
+    try {
+      await bleManager.write(deviceId, cfg.serviceUUID, cfg.characteristicUUID, payload, cfg.writeWithResponse)
+      hb.sent++
+      session.txBytes += payload.byteLength
+      const entry: LogEntry = {
+        id: `log_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        timestamp: Date.now(),
+        direction: 'TX',
+        hex: bufToHex(payload),
+        ascii: bufToAscii(payload),
+        rawLength: payload.byteLength,
+        label: HEARTBEAT_LABEL,
+        serviceUUID: cfg.serviceUUID,
+        characteristicUUID: cfg.characteristicUUID,
+        operationId: 'heartbeat',
+      }
+      session.logBuffer.push(entry)
+      session.logs = session.logBuffer.getAll()
+      recordSessionLog(deviceId, entry)
+      recordSessionHeartbeat(deviceId, { type: 'sent' })
+      if (cfg.expectResponse) {
+        hb.pendingSentAt = Date.now()
+        if (hb.timeoutTimer) clearTimeout(hb.timeoutTimer)
+        hb.timeoutTimer = setTimeout(() => {
+          hb.timeoutTimer = null
+          if (!hb.running || hb.pendingSentAt === null) return
+          hb.pendingSentAt = null
+          hb.missed++
+          hb.consecutiveMissed++
+          recordSessionHeartbeat(deviceId, { type: 'missed' })
+          _addSysLogToSession(session, `♥ 心跳应答超时 #${hb.missed}（连续 ${hb.consecutiveMissed} 次）`)
+          triggerSessionUpdate()
+        }, Math.min(cfg.timeoutMs, cfg.intervalMs))
+      }
+      triggerSessionUpdate()
+    } catch (e: any) {
+      hb.missed++
+      hb.consecutiveMissed++
+      recordSessionHeartbeat(deviceId, { type: 'missed' })
+      _addSysLogToSession(session, `♥ 心跳发送失败: ${e?.message ?? e}`)
+      triggerSessionUpdate()
+    }
+  }
+
+  function startHeartbeatTest(deviceId: string, config: HeartbeatConfig) {
+    const session = getSession(deviceId)
+    if (!session) return
+    stopHeartbeatTest(deviceId, true)
+    const hb = session.heartbeat
+    Object.assign(hb, createHeartbeatRuntime())
+    hb.running = true
+    hb.config = { ...config }
+    hb.startedAt = Date.now()
+    saveHeartbeatConfig(deviceId, config)
+    _addSysLogToSession(
+      session,
+      `♥ 心跳测试开始: ${shortUUID(config.characteristicUUID)} / 每 ${config.intervalMs}ms` +
+        (config.expectResponse ? ` / 应答超时 ${config.timeoutMs}ms` : ' / 不校验应答'),
+    )
+    _heartbeatTick(deviceId)
+    hb.timer = setInterval(() => _heartbeatTick(deviceId), config.intervalMs)
+    triggerSessionUpdate()
+  }
+
+  function stopHeartbeatTest(deviceId?: string, silent = false) {
+    const id = deviceId ?? activeSessionId.value
+    const session = getSession(id)
+    if (!session) return
+    const hb = session.heartbeat
+    if (hb.timer) {
+      clearInterval(hb.timer)
+      hb.timer = null
+    }
+    if (hb.timeoutTimer) {
+      clearTimeout(hb.timeoutTimer)
+      hb.timeoutTimer = null
+    }
+    hb.pendingSentAt = null
+    if (hb.running) {
+      hb.running = false
+      if (!silent) {
+        _addSysLogToSession(
+          session,
+          `♥ 心跳测试结束: 发 ${hb.sent} / 应 ${hb.acked} / 丢 ${hb.missed} (${heartbeatLossPercent(hb)}%)` +
+            (hb.rttAvgMs !== null ? ` / RTT 均值 ${hb.rttAvgMs}ms` : ''),
+        )
+      }
+      triggerSessionUpdate()
+    }
   }
 
   // ── RSSI 轮询（每 session 独立）──────────────────────────────────────────
@@ -455,6 +638,7 @@ export const useBleStore = defineStore('ble', () => {
       }
       try {
         const rssi = await bleManager.getRSSI(deviceId)
+        recordSessionRssi(deviceId, rssi)
         s.rssiHistory.push({ time: Date.now(), rssi })
         if (s.rssiHistory.length > 60) s.rssiHistory.splice(0, 1)
         s.device = { ...s.device, RSSI: rssi }
@@ -504,6 +688,7 @@ export const useBleStore = defineStore('ble', () => {
     }
     session.logBuffer.push(entry)
     session.logs = session.logBuffer.getAll()
+    recordSessionLog(session.device.deviceId, entry)
   }
 
   function _addSysLogToAll(message: string) {
@@ -516,6 +701,7 @@ export const useBleStore = defineStore('ble', () => {
   // ── App 生命周期 ──────────────────────────────────────────────────────────
 
   function onAppBackground() {
+    flushAllSessionRecords()
     sessions.value.forEach((session) => {
       if (session.rssiPollTimer) {
         clearInterval(session.rssiPollTimer)
@@ -533,6 +719,8 @@ export const useBleStore = defineStore('ble', () => {
         if (!session.rssiPollTimer) _startRssiPoll(deviceId)
         bleManager.getRSSI(deviceId).catch(() => {
           _stopRssiPoll(session)
+          stopHeartbeatTest(deviceId, true)
+          endSessionRecord(deviceId, 'lost')
           const name = session.device.name
           sessions.value.delete(deviceId)
           if (activeSessionId.value === deviceId) {
@@ -549,6 +737,7 @@ export const useBleStore = defineStore('ble', () => {
   // ── 重置 ──────────────────────────────────────────────────────────────────
 
   function reset() {
+    sessions.value.forEach((_, deviceId) => stopHeartbeatTest(deviceId, true))
     sessions.value.forEach((session) => _stopRssiPoll(session))
     sessions.value.clear()
     activeSessionId.value = ''
@@ -601,6 +790,7 @@ export const useBleStore = defineStore('ble', () => {
     txDisplayMode,
     activeCharacteristics,
     activeCharacteristic,
+    activeHeartbeat,
     // actions
     init,
     onAppBackground,
@@ -622,6 +812,8 @@ export const useBleStore = defineStore('ble', () => {
     addQuickCommand,
     removeQuickCommand,
     negotiateMtu,
+    startHeartbeatTest,
+    stopHeartbeatTest,
     reset,
   }
 })

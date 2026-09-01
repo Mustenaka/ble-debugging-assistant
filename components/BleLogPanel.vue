@@ -26,6 +26,10 @@
           <text class="toggle-label">{{ autoLabel }}</text>
         </view>
 
+        <view v-if="hasHeartbeatLogs" class="toggle-btn toggle-btn--hb" :class="{ active: showHeartbeat }" @click="showHeartbeat = !showHeartbeat">
+          <text class="toggle-icon">♥</text>
+        </view>
+
         <view class="log-actions">
           <view v-if="showExport !== false" class="action-btn" @click="$emit('export')"><text class="action-icon">⬇</text></view>
           <view class="action-btn action-btn--danger" @click="$emit('clear')"><text class="action-icon">✕</text></view>
@@ -42,13 +46,13 @@
       @scroll="onScroll"
     >
       <view class="log-list">
-        <view v-if="!logs.length" class="log-empty">
+        <view v-if="!displayedLogs.length" class="log-empty">
           <text class="empty-icon-text">⌁</text>
           <text class="empty-text">{{ waitingText }}</text>
         </view>
 
         <view
-          v-for="entry in logs"
+          v-for="entry in displayedLogs"
           :key="entry.id"
           class="log-entry"
           :class="`log-entry--${entry.direction.toLowerCase()}`"
@@ -84,9 +88,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick } from 'vue'
 import type { LogEntry } from '../utils/buffer'
 import { formatTimestamp } from '../utils/buffer'
+import { isHeartbeatLabel } from '../utils/heartbeat'
 
 type DisplayMode = 'hex' | 'ascii' | 'both'
 
@@ -115,6 +120,13 @@ const scrollTop = ref(0)
 const autoScroll = ref(true)
 const unreadCount = ref(0)
 const lastLogCount = ref(0)
+
+// ── 心跳日志过滤 ──
+const showHeartbeat = ref(true)
+const hasHeartbeatLogs = computed(() => props.logs.some((e) => isHeartbeatLabel(e.label)))
+const displayedLogs = computed(() =>
+  showHeartbeat.value ? props.logs : props.logs.filter((e) => !isHeartbeatLabel(e.label))
+)
 
 function toggleAutoScroll() {
   autoScroll.value = !autoScroll.value
@@ -183,6 +195,7 @@ function formatBytes(n: number): string {
   &.active { border-color: rgba(var(--color-primary-rgb), 0.3); background: rgba(var(--color-primary-rgb), 0.08); .toggle-icon, .toggle-label { color: var(--color-primary); } }
 }
 .toggle-icon, .toggle-label { font-size: 11px; color: var(--text-secondary); }
+.toggle-btn--hb.active { border-color: rgba(var(--color-danger-rgb), 0.35); background: rgba(var(--color-danger-rgb), 0.08); .toggle-icon { color: var(--color-danger); } }
 
 .log-actions { display: flex; gap: 4px; margin-left: auto; }
 .action-btn {

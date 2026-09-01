@@ -23,6 +23,10 @@
           <text class="notify-icon">{{ bleStore.notifyEnabled ? '◉' : '○' }}</text>
           <text class="notify-label">NOTIFY</text>
         </view>
+        <!-- 心跳测试 -->
+        <view class="hdr-btn" :class="{ 'hdr-btn--hb-on': bleStore.activeHeartbeat?.running }" @click="showHeartbeatPanel = true">
+          <text class="hdr-btn-icon hb-icon" :class="{ 'hb-icon--on': bleStore.activeHeartbeat?.running }">♥</text>
+        </view>
         <!-- 主题/语言快切 -->
         <view class="hdr-btn" @click="appStore.toggleTheme()">
           <text class="hdr-btn-icon">{{ appStore.isDark ? '☀' : '◑' }}</text>
@@ -49,6 +53,15 @@
         <view class="menu-item" @click="openSettings"><text class="mi-icon">⚙</text><text class="mi-text">{{ t('settings.title') }}</text></view>
         <view class="menu-divider" />
         <view class="menu-item" @click="handleDisconnect"><text class="mi-icon danger">⊗</text><text class="mi-text danger">{{ t('debug.moreMenu.disconnect') }}</text></view>
+      </view>
+    </view>
+
+    <!-- 心跳运行中状态条 -->
+    <view v-if="bleStore.activeHeartbeat?.running" class="hb-strip" @click="showHeartbeatPanel = true">
+      <text class="hb-strip-heart">♥</text>
+      <text class="hb-strip-text mono">{{ hbStripText }}</text>
+      <view class="hb-strip-stop" @click.stop="stopHeartbeatFromStrip">
+        <text class="hb-strip-stop-text">{{ t('heartbeat.stop') }}</text>
       </view>
     </view>
 
@@ -253,6 +266,9 @@
     <!-- 设置面板 -->
     <SettingsPanel :visible="showSettings" @close="showSettings = false" />
 
+    <!-- 心跳测试面板 -->
+    <HeartbeatPanel :visible="showHeartbeatPanel" @close="showHeartbeatPanel = false" />
+
   </view>
 </template>
 
@@ -271,6 +287,7 @@ import SettingsPanel from '../../components/SettingsPanel.vue'
 import DiffModal from '../../components/DiffModal.vue'
 import LeftTabBar from '../../components/LeftTabBar.vue'
 import DeviceTabBar from '../../components/DeviceTabBar.vue'
+import HeartbeatPanel from '../../components/HeartbeatPanel.vue'
 
 const bleStore = useBleStore()
 const appStore = useAppStore()
@@ -285,6 +302,7 @@ const showDiffModal = ref(false)
 const activeProtocol = ref('raw')
 const logDisplayMode = ref<'hex' | 'ascii' | 'both'>('hex')
 const { isWideScreen } = useResponsive()
+const showHeartbeatPanel = ref(false)
 const showSaveQuickDialog = ref(false)
 const quickCmdName = ref('')
 const quickCmdType = ref<QuickCommandType>('custom')
@@ -450,6 +468,19 @@ function handleSaveLogSample(entry: any) {
 }
 
 function goToDevice() { uni.switchTab({ url: '/pages/device/index' }) }
+
+const hbStripText = computed(() => {
+  const hb = bleStore.activeHeartbeat
+  if (!hb?.running) return ''
+  let text = `${hb.config?.intervalMs ?? 0}ms · ${t('heartbeat.statSent')} ${hb.sent} · ${t('heartbeat.statAcked')} ${hb.acked} · ${t('heartbeat.statMissed')} ${hb.missed}`
+  if (hb.lastRttMs != null) text += ` · RTT ${hb.lastRttMs}ms`
+  return text
+})
+
+function stopHeartbeatFromStrip() {
+  bleStore.stopHeartbeatTest(bleStore.activeSessionId)
+  uni.showToast({ title: t('heartbeat.stoppedToast'), icon: 'none', duration: 1200 })
+}
 </script>
 
 <style lang="scss" scoped>
@@ -489,6 +520,26 @@ function goToDevice() { uni.switchTab({ url: '/pages/device/index' }) }
   &:active { opacity: 0.7; }
 }
 .hdr-btn-icon { font-size: 13px; color: var(--text-muted); &.lang { font-size: 11px; font-weight: 700; color: var(--color-primary); } }
+.hdr-btn--hb-on { border-color: rgba(var(--color-danger-rgb), 0.4); background: rgba(var(--color-danger-rgb), 0.08); }
+.hb-icon--on { color: var(--color-danger); animation: ble-pulse 1s ease-in-out infinite; }
+
+/* ── 心跳状态条 ── */
+.hb-strip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 14px;
+  background: rgba(var(--color-danger-rgb), 0.06);
+  border-bottom: 1px solid rgba(var(--color-danger-rgb), 0.2);
+  flex-shrink: 0;
+  &:active { opacity: 0.85; }
+}
+.hb-strip-heart { font-size: 13px; color: var(--color-danger); animation: ble-pulse 1s ease-in-out infinite; flex-shrink: 0; }
+.hb-strip-text { flex: 1; font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hb-strip-stop {
+  padding: 3px 10px; border-radius: 6px; flex-shrink: 0;
+  background: rgba(var(--color-danger-rgb), 0.1); border: 1px solid rgba(var(--color-danger-rgb), 0.3);
+  &:active { opacity: 0.7; }
+}
+.hb-strip-stop-text { font-size: 11px; color: var(--color-danger); font-weight: 600; }
 .more-btn { width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 8px; &:active { opacity: 0.7; } }
 .more-icon { font-size: 18px; color: var(--text-secondary); }
 

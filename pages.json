@@ -39,6 +39,16 @@
         "backgroundColor": "#0A0F1C",
         "enablePullDownRefresh": false
       }
+    },
+    {
+      "path": "pages/history/index",
+      "style": {
+        "navigationBarTitleText": "传输历史",
+        "navigationBarBackgroundColor": "#0A0F1C",
+        "navigationBarTextStyle": "white",
+        "backgroundColor": "#0A0F1C",
+        "enablePullDownRefresh": false
+      }
     }
   ],
   "globalStyle": {

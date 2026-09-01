@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-01
+
+### Added
+
+- Added a persistent per-device session archive (`utils/deviceArchive.ts`): every connection is recorded as a session (logs, TX/RX stats, RSSI range, MTU, disconnect reason, heartbeat stats) with throttled flushing, per-device/session caps, and automatic pruning.
+- Added a Transfer History page (`pages/history/`) with device-grouped session lists, per-session detail (summary, heartbeat stats, filterable timeline with pagination), session deletion, device history clearing, and single-session `SESSION_LOG.md` export. Phone uses drill-down navigation; wide screens use a master-detail two-pane layout.
+- Added history entry points on Device page session cards and Scan page recent devices.
+- Added user protocol annotations: services, characteristics, and operations (with request/response field tables, examples, and mock rules) are editable in-app via a new Annotation Editor, stored per device, and merged over built-in protocol templates (user annotations win). Operation counts and annotated names surface in the Device page service tree.
+- Added heartbeat connection soak testing: per-device configurable payload (HEX/ASCII, fill from quick commands), interval, write mode, and optional response verification (response characteristic, HEX prefix match, timeout). Live stats (sent/acked/missed/loss %, RTT min/avg/max, RTT trend bars), consecutive-miss warnings, auto Notify enabling, heartbeat entries in the log stream with a filter toggle, and heartbeat stats recorded into the session archive and exports.
+
+### Changed
+
+- Rebuilt Debug Pack export from one mixed Markdown file into a zipped document set: `README.md`, `PROTOCOL.md` + `protocol.json` (annotation-merged endpoint docs with field tables), `SESSION_LOG.md` + `logs.csv` (session summary, heartbeat stats, per-endpoint traffic, annotated timeline), `AI_PROMPT.md` (references pack files instead of embedding JSON), and `mock.json`. Export modal now selects which documents to include; Android/iOS package to zip via native APIs, H5 downloads files individually.
+- Removed the dead legacy heartbeat scaffolding from `services/bleManager.ts`; heartbeat now runs in the BLE store with full logging and statistics.
+
 ## 2026-05-15
 
 ### Fixed

@@ -180,8 +180,9 @@ function writeToDir(dirEntry: any, name: string, content: string, mimeType: stri
  *
  * usePublicDownloads=true  → /sdcard/Download/ble-debugging/   (需 WRITE_EXTERNAL_STORAGE)
  * usePublicDownloads=false → /sdcard/Android/data/<pkg>/files/ble-debugging/  (无需权限)
+ * subfolder 非空时写入 ble-debugging/<subfolder>/ 下
  */
-function writeViaAndroidJava(name: string, content: string, usePublicDownloads: boolean): Promise<string> {
+function writeViaAndroidJava(name: string, content: string, usePublicDownloads: boolean, subfolder = ''): Promise<string> {
   return new Promise((resolve, reject) => {
     try {
       const File = plus.android.importClass('java.io.File')
@@ -202,7 +203,8 @@ function writeViaAndroidJava(name: string, content: string, usePublicDownloads: 
         console.log('[Export/JavaFile] target: externalFilesDir —', basePath)
       }
 
-      const dir = new File(basePath + '/' + EXPORT_SUBFOLDER)
+      const dirPath = basePath + '/' + EXPORT_SUBFOLDER + (subfolder ? '/' + subfolder : '')
+      const dir = new File(dirPath)
       if (!dir.exists()) {
         const ok: boolean = dir.mkdirs()
         console.log('[Export/JavaFile] mkdirs:', ok, '—', dir.getAbsolutePath())
@@ -287,6 +289,110 @@ export function saveLogsToFile(content: string, filename?: string, mimeType = 't
     resolve(name)
     // #endif
   })
+}
+
+// ─── Debug Pack 多文件导出与打包 ─────────────────────────────────────────────
+
+export interface DebugPackSaveResult {
+  /** 文件夹路径（H5 下为空） */
+  folderPath: string
+  /** zip 路径（打包失败或 H5 下为 null） */
+  zipPath: string | null
+}
+
+function zipWithPlus(srcDir: string, zipPath: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    try {
+      ;(plus as any).zip.compress(
+        srcDir,
+        zipPath,
+        () => {
+          console.log('[Export/zip] success —', zipPath)
+          resolve(zipPath)
+        },
+        (e: any) => {
+          console.warn('[Export/zip] failed —', JSON.stringify(e))
+          resolve(null)
+        },
+      )
+    } catch (e) {
+      console.warn('[Export/zip] exception —', e)
+      resolve(null)
+    }
+  })
+}
+
+/** iOS: 在 _doc/ble-debugging/<subfolder>/ 下写单个文件 */
+function writeToNestedDocDir(subfolder: string, name: string, content: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    plus.io.resolveLocalFileSystemURL('_doc/', (rootDir: any) => {
+      rootDir.getDirectory(EXPORT_SUBFOLDER, { create: true, exclusive: false }, (baseDir: any) => {
+        baseDir.getDirectory(subfolder, { create: true, exclusive: false }, (subDir: any) => {
+          subDir.getFile(name, { create: true, exclusive: false }, (fileEntry: any) => {
+            fileEntry.createWriter((writer: any) => {
+              writer.onwriteend = () => {
+                if (writer.error) reject(new Error(writer.error.message ?? 'write error'))
+                else resolve(fileEntry.toLocalURL())
+              }
+              writer.onerror = (e: any) => reject(new Error(e?.message ?? 'FileWriter error'))
+              writer.write(content)
+            }, (e: any) => reject(new Error(e?.message ?? 'createWriter error')))
+          }, (e: any) => reject(new Error(e?.message ?? 'getFile error')))
+        }, (e: any) => reject(new Error(e?.message ?? 'getDirectory(sub) error')))
+      }, (e: any) => reject(new Error(e?.message ?? 'getDirectory(base) error')))
+    }, (e: any) => reject(new Error(e?.message ?? '_doc/ error')))
+  })
+}
+
+/**
+ * 保存 Debug Pack 文件集到独立文件夹并打包为 zip
+ *  Android：Java File I/O 写入外部目录，plus.zip 压缩
+ *  iOS    ：plus.io 写入 _doc/，plus.zip 压缩
+ *  H5     ：逐个触发浏览器下载（无 zip）
+ */
+export async function saveDebugPackFiles(
+  folderName: string,
+  files: { name: string; content: string }[],
+): Promise<DebugPackSaveResult> {
+  // #ifdef APP-PLUS
+  if (plus.os.name === 'Android') {
+    let lastPath = ''
+    for (const file of files) {
+      lastPath = await writeViaAndroidJava(file.name, file.content, false, folderName)
+    }
+    const folderPath = lastPath.slice(0, lastPath.lastIndexOf('/'))
+    const zipPath = folderPath.slice(0, folderPath.lastIndexOf('/')) + '/' + folderName + '.zip'
+    const zipped = await zipWithPlus(folderPath, zipPath)
+    return { folderPath, zipPath: zipped }
+  } else {
+    for (const file of files) {
+      await writeToNestedDocDir(folderName, file.name, file.content)
+    }
+    const srcDir = `_doc/${EXPORT_SUBFOLDER}/${folderName}/`
+    const zipRel = `_doc/${EXPORT_SUBFOLDER}/${folderName}.zip`
+    const zipped = await zipWithPlus(srcDir, zipRel)
+    let absoluteZip: string | null = null
+    if (zipped) {
+      absoluteZip = plus.io.convertLocalFileSystemURL(zipped)
+    }
+    return { folderPath: srcDir, zipPath: absoluteZip ?? zipped }
+  }
+  // #endif
+
+  // #ifndef APP-PLUS
+  for (const file of files) {
+    const blob = new Blob([file.content], { type: 'application/octet-stream' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${folderName}_${file.name}`
+    a.click()
+    URL.revokeObjectURL(url)
+    // 避免浏览器拦截连续下载
+    await new Promise((r) => setTimeout(r, 250))
+  }
+  return { folderPath: '', zipPath: null }
+  // #endif
 }
 
 // ─── 设备信息报告导出 ────────────────────────────────────────────────────────

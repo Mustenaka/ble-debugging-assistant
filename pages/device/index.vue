@@ -65,8 +65,13 @@
               <view class="debug-btn" @click.stop="goToDebug(deviceId)">
                 <text class="debug-btn-text">{{ t('multiDevice.goToDebug') }}</text>
               </view>
-              <view class="disc-btn" @click.stop="handleDisconnect(deviceId, session.device.name)">
-                <text class="disc-btn-text">{{ t('device.disconnect') }}</text>
+              <view class="action-row">
+                <view class="hist-btn" @click.stop="goToHistory(deviceId)">
+                  <text class="hist-btn-text">🕓 {{ t('history.entryBtn') }}</text>
+                </view>
+                <view class="disc-btn" @click.stop="handleDisconnect(deviceId, session.device.name)">
+                  <text class="disc-btn-text">{{ t('device.disconnect') }}</text>
+                </view>
               </view>
               <view class="expand-chevron" :class="{ 'expand-chevron--open': expandedSessions.has(deviceId) }">
                 <text class="chevron-text">›</text>
@@ -154,6 +159,9 @@
                   <text v-if="getServiceDocTitle(deviceId, service.uuid)" class="service-doc-name">{{ getServiceDocTitle(deviceId, service.uuid) }}</text>
                   <text v-if="getServiceDocSummary(deviceId, service.uuid)" class="service-doc-summary">{{ getServiceDocSummary(deviceId, service.uuid) }}</text>
                 </view>
+                <view class="doc-edit-btn" @click.stop="openServiceAnnotation(deviceId, service.uuid)">
+                  <text class="doc-edit-icon">✎</text>
+                </view>
                 <view class="expand-icon" :class="{ 'expand-icon--open': service.expanded }">
                   <text class="expand-text">›</text>
                 </view>
@@ -179,10 +187,14 @@
                       <text class="branch-text">├</text>
                       <text class="char-uuid mono">{{ shortUUID(char.uuid) }}</text>
                       <view v-if="isSelectedChar(deviceId, service.uuid, char.uuid)" class="selected-dot" />
+                      <view class="doc-edit-btn doc-edit-btn--char" @click.stop="openCharAnnotation(deviceId, service.uuid, char.uuid)">
+                        <text class="doc-edit-icon">✎</text>
+                      </view>
                     </view>
                     <text class="char-full-uuid">{{ char.uuid }}</text>
                     <text v-if="getCharDocTitle(deviceId, service.uuid, char.uuid)" class="char-doc-name">{{ getCharDocTitle(deviceId, service.uuid, char.uuid) }}</text>
                     <text v-if="getCharDocFormat(deviceId, service.uuid, char.uuid)" class="char-doc-format">{{ getCharDocFormat(deviceId, service.uuid, char.uuid) }}</text>
+                    <text v-if="getCharOpsCount(deviceId, service.uuid, char.uuid)" class="char-doc-ops">{{ t('annotation.opsCount', { n: getCharOpsCount(deviceId, service.uuid, char.uuid) }) }}</text>
                     <view class="char-props">
                       <view v-if="char.properties.read"          class="prop-badge prop-r"><text class="prop-text">{{ t('device.properties.read') }}</text></view>
                       <view v-if="char.properties.write"         class="prop-badge prop-w"><text class="prop-text">{{ t('device.properties.write') }}</text></view>
@@ -202,6 +214,20 @@
     <!-- 设置面板 -->
     <SettingsPanel :visible="showSettings" @close="showSettings = false" />
 
+    <!-- 接口文档编辑器 -->
+    <AnnotationEditor
+      :visible="showAnnotationEditor"
+      :device-id="annTarget.deviceId"
+      :device-name="annTarget.deviceName"
+      :mode="annTarget.mode"
+      :serviceUUID="annTarget.serviceUUID"
+      :charUUID="annTarget.charUUID"
+      :initial="annTarget.initial"
+      :samples="annTarget.samples"
+      @close="showAnnotationEditor = false"
+      @saved="handleAnnotationSaved"
+    />
+
     <!-- 导出弹窗 -->
     <view v-if="showExportModal" class="modal-overlay" @click="showExportModal = false">
       <view class="modal-card" @click.stop>
@@ -219,6 +245,25 @@
             @click="exportPurpose = purpose.value"
           >
             <text class="fmt-tab-text">{{ purpose.label }}</text>
+          </view>
+        </view>
+        <view class="docs-section">
+          <text class="docs-label">{{ t('device.export.docsLabel') }}</text>
+          <view class="option-row" @click="docProtocol = !docProtocol">
+            <text class="option-check">{{ docProtocol ? '✓' : '' }}</text>
+            <text class="option-text">{{ t('device.export.docProtocol') }}</text>
+          </view>
+          <view class="option-row" @click="docSessionLog = !docSessionLog">
+            <text class="option-check">{{ docSessionLog ? '✓' : '' }}</text>
+            <text class="option-text">{{ t('device.export.docSessionLog') }}</text>
+          </view>
+          <view class="option-row" @click="docAiPrompt = !docAiPrompt">
+            <text class="option-check">{{ docAiPrompt ? '✓' : '' }}</text>
+            <text class="option-text">{{ t('device.export.docAiPrompt') }}</text>
+          </view>
+          <view class="option-row" @click="docMock = !docMock">
+            <text class="option-check">{{ docMock ? '✓' : '' }}</text>
+            <text class="option-text">{{ t('device.export.docMock') }}</text>
           </view>
         </view>
         <view class="option-row" @click="includeRawLogs = !includeRawLogs">
@@ -264,12 +309,24 @@ import { useResponsive } from '../../composables/useResponsive'
 import type { BleCharacteristic } from '../../services/bleManager'
 import { shortUUID } from '../../utils/hex'
 import {
-  saveLogsToFile, buildDeviceReportFilename,
+  buildDeviceReportFilename,
+  saveDebugPackFiles,
   type DeviceReportInfo,
 } from '../../utils/buffer'
 import { matchBuiltinProtocolDocs } from '../../services/builtinProtocolDocs'
 import {
-  buildDebugPackMarkdown,
+  loadDeviceAnnotations,
+  mergeAnnotationsIntoDocs,
+  charAnnotationKey,
+  getActiveSessionMeta,
+  type AnnotationEditorInitial,
+  type DeviceAnnotations,
+  type OperationAnnotation,
+} from '../../utils/deviceArchive'
+import { buildDebugPackFiles, type ExportContext } from '../../utils/exporters'
+import type { BleProtocolSample } from '../../utils/buffer'
+import AnnotationEditor from '../../components/AnnotationEditor.vue'
+import {
   getCharacteristicDoc,
   getServiceDoc,
   type DebugPackPurpose,
@@ -295,6 +352,10 @@ const exportNotes = ref('')
 const exportPurpose = ref<DebugPackPurpose>('ai')
 const includeRawLogs = ref(true)
 const redactDeviceId = ref(false)
+const docProtocol = ref(true)
+const docSessionLog = ref(true)
+const docAiPrompt = ref(true)
+const docMock = ref(true)
 const isExporting = ref(false)
 const exportTargetId = ref<string>('')
 const exportPurposes = computed<{ value: DebugPackPurpose; label: string }[]>(() => [
@@ -417,11 +478,84 @@ function selectChar(deviceId: string, serviceId: string, charId: string) {
   uni.showToast({ title: `${t('device.selected')} ${shortUUID(charId)}`, icon: 'none', duration: 1000 })
 }
 
-// ── 内置协议文档说明 ────────────────────────────────────────────────────────
+// ── 协议文档说明（用户注释 > 内置模板）─────────────────────────────────────
+
+const annotationCache = reactive<Record<string, DeviceAnnotations>>({})
+
+function annotationsFor(deviceId: string): DeviceAnnotations {
+  if (!annotationCache[deviceId]) {
+    annotationCache[deviceId] = loadDeviceAnnotations(deviceId)
+  }
+  return annotationCache[deviceId]
+}
 
 function matchedDocsForDevice(deviceId: string) {
   const session = bleStore.sessions.get(deviceId)
-  return matchBuiltinProtocolDocs((session?.services ?? []).map((s) => s.uuid))
+  const builtin = matchBuiltinProtocolDocs((session?.services ?? []).map((s) => s.uuid))
+  return mergeAnnotationsIntoDocs(builtin, annotationsFor(deviceId))
+}
+
+function getCharOpsCount(deviceId: string, serviceUUID: string, charUUID: string): number {
+  return getCharacteristicDoc(matchedDocsForDevice(deviceId), serviceUUID, charUUID)?.interfaces.length ?? 0
+}
+
+// ── 接口文档编辑器 ──────────────────────────────────────────────────────────
+
+const showAnnotationEditor = ref(false)
+const annTarget = ref<{
+  deviceId: string
+  deviceName: string
+  mode: 'service' | 'char'
+  serviceUUID: string
+  charUUID: string
+  initial: AnnotationEditorInitial
+  samples: BleProtocolSample[]
+}>({
+  deviceId: '', deviceName: '', mode: 'service', serviceUUID: '', charUUID: '', initial: {}, samples: [],
+})
+
+function openServiceAnnotation(deviceId: string, serviceUUID: string) {
+  const session = bleStore.sessions.get(deviceId)
+  const doc = getServiceDoc(matchedDocsForDevice(deviceId), serviceUUID)
+  annTarget.value = {
+    deviceId,
+    deviceName: session?.device.name ?? '',
+    mode: 'service',
+    serviceUUID,
+    charUUID: '',
+    initial: { name: doc?.name, role: doc?.role, summary: doc?.summary },
+    samples: [],
+  }
+  showAnnotationEditor.value = true
+}
+
+function openCharAnnotation(deviceId: string, serviceUUID: string, charUUID: string) {
+  const session = bleStore.sessions.get(deviceId)
+  const doc = getCharacteristicDoc(matchedDocsForDevice(deviceId), serviceUUID, charUUID)
+  // 操作只预填用户已有注释（内置模板操作保持只读合并，避免整段复制）
+  const ann = annotationsFor(deviceId)
+  const existing = ann.characteristics[charAnnotationKey(serviceUUID, charUUID)]
+  const operations: OperationAnnotation[] = existing?.operations ?? []
+  annTarget.value = {
+    deviceId,
+    deviceName: session?.device.name ?? '',
+    mode: 'char',
+    serviceUUID,
+    charUUID,
+    initial: {
+      name: doc?.name,
+      direction: doc?.direction,
+      valueFormat: doc?.valueFormat,
+      description: doc?.description,
+      operations,
+    },
+    samples: session?.savedSamples ?? [],
+  }
+  showAnnotationEditor.value = true
+}
+
+function handleAnnotationSaved(annotations: DeviceAnnotations) {
+  annotationCache[annotations.deviceId] = annotations
 }
 
 function getServiceDocTitle(deviceId: string, serviceUUID: string): string {
@@ -464,6 +598,10 @@ async function handleMtuNegotiate(deviceId: string) {
 function goToDebug(deviceId: string) {
   bleStore.switchSession(deviceId)
   uni.navigateTo({ url: '/pages/debug/index' })
+}
+
+function goToHistory(deviceId: string) {
+  uni.navigateTo({ url: `/pages/history/index?deviceId=${encodeURIComponent(deviceId)}` })
 }
 
 function goToScan() {
@@ -538,34 +676,56 @@ async function confirmExport() {
       })),
     }
 
-    const matchedProfiles = matchBuiltinProtocolDocs(reportInfo.services.map((s) => s.uuid)).profiles
-    const content = buildDebugPackMarkdown({
+    if (!docProtocol.value && !docSessionLog.value && !docAiPrompt.value && !docMock.value) {
+      uni.showToast({ title: t('device.export.noDocsSelected'), icon: 'none' })
+      return
+    }
+
+    const builtin = matchBuiltinProtocolDocs(reportInfo.services.map((s) => s.uuid))
+    const annotations = annotationsFor(deviceId)
+    const ctx: ExportContext = {
       device: reportInfo,
-      profiles: matchedProfiles,
+      mergedDocs: mergeAnnotationsIntoDocs(builtin, annotations),
+      builtinProfiles: builtin.profiles,
+      annotations,
       logs: session.logs,
       samples: session.savedSamples,
+      sessionMeta: getActiveSessionMeta(deviceId),
       options: {
         purpose: exportPurpose.value,
         notes: exportNotes.value,
         includeRawLogs: includeRawLogs.value,
         redactDeviceId: redactDeviceId.value,
+        includeProtocolDoc: docProtocol.value,
+        includeSessionLog: docSessionLog.value,
+        includeAiPrompt: docAiPrompt.value,
+        includeMock: docMock.value,
       },
-    })
-    const mimeType = 'text/markdown'
-    const filename = buildDeviceReportFilename(session.device.name, 'md').replace('BLE_DeviceReport_', 'BLE_DebugPack_')
+    }
+    const files = buildDebugPackFiles(ctx)
+    const folderName = buildDeviceReportFilename(session.device.name, 'md')
+      .replace('BLE_DeviceReport_', 'BLE_DebugPack_')
+      .replace(/\.md$/, '')
     showExportModal.value = false
-    const path = await saveLogsToFile(content, filename, mimeType)
+    const result = await saveDebugPackFiles(folderName, files)
 
     // #ifdef APP-PLUS
-    if (plus.os.name === 'Android') {
+    const sharePath = result.zipPath
+    if (!sharePath) {
+      uni.showModal({
+        title: t('device.export.success'),
+        content: `${t('device.export.zipFailedNote')}\n${result.folderPath}`,
+        showCancel: false, confirmText: t('common.ok'),
+      })
+    } else if (plus.os.name === 'Android') {
       try {
         const Intent = plus.android.importClass('android.content.Intent')
         const File = plus.android.importClass('java.io.File')
         const BuildVersion = plus.android.importClass('android.os.Build$VERSION')
         const activity = plus.android.runtimeMainActivity()
         const intent = new Intent(Intent.ACTION_SEND)
-        intent.setType(mimeType)
-        const file = new File(path)
+        intent.setType('application/zip')
+        const file = new File(sharePath)
         if (BuildVersion.SDK_INT >= 24) {
           const FileProvider = plus.android.importClass('androidx.core.content.FileProvider')
           const authority = activity.getPackageName() + '.dc.fileprovider'
@@ -578,16 +738,16 @@ async function confirmExport() {
         }
         activity.startActivity(Intent.createChooser(intent, t('device.export.shareTitle')))
       } catch {
-        uni.showModal({ title: t('device.export.success'), content: `${filename}\n\n${t('device.export.savePath')}${path}`, showCancel: false, confirmText: t('common.ok') })
+        uni.showModal({ title: t('device.export.success'), content: `${t('device.export.savePath')}${sharePath}`, showCancel: false, confirmText: t('common.ok') })
       }
     } else {
-      plus.share.sendWithSystem({ type: 'file', href: path }, () => {}, () => {
-        uni.showModal({ title: t('device.export.success'), content: `${filename}\n\n${t('device.export.savePath')}${path}`, showCancel: false, confirmText: t('common.ok') })
+      plus.share.sendWithSystem({ type: 'file', href: sharePath }, () => {}, () => {
+        uni.showModal({ title: t('device.export.success'), content: `${t('device.export.savePath')}${sharePath}`, showCancel: false, confirmText: t('common.ok') })
       })
     }
     // #endif
     // #ifndef APP-PLUS
-    uni.showModal({ title: t('device.export.success'), content: `${filename}\n\n${t('device.export.savePath')}${path}`, showCancel: false, confirmText: t('common.ok') })
+    uni.showModal({ title: t('device.export.success'), content: t('device.export.h5Downloaded'), showCancel: false, confirmText: t('common.ok') })
     // #endif
   } catch (e: any) {
     uni.showToast({ title: t('device.export.failed'), icon: 'none' })
@@ -696,6 +856,14 @@ async function confirmExport() {
 .mtu-chip-text { font-size: 10px; color: var(--color-accent); font-family: 'Courier New', monospace; }
 
 .session-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+.action-row { display: flex; gap: 5px; }
+.hist-btn {
+  padding: 4px 10px;
+  background: rgba(var(--color-primary-rgb), 0.08);
+  border: 1px solid rgba(var(--color-primary-rgb), 0.2);
+  border-radius: 7px; &:active { opacity: 0.7; }
+}
+.hist-btn-text { font-size: 11px; color: var(--color-primary); font-weight: 500; }
 .debug-btn {
   padding: 5px 12px;
   background: linear-gradient(135deg, var(--color-accent) 0%, rgba(var(--color-accent-rgb), 0.7) 100%);
@@ -782,6 +950,15 @@ async function confirmExport() {
 .service-full-uuid { font-size: 10px; color: var(--text-dimmed); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
 .service-doc-name { display: block; font-size: 11px; color: var(--color-accent); font-weight: 600; margin-top: 4px; }
 .service-doc-summary { display: block; font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 1px; }
+.char-doc-ops { display: block; font-size: 10px; color: var(--color-purple); font-weight: 600; margin-top: 2px; }
+.doc-edit-btn {
+  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+  background: rgba(var(--color-primary-rgb), 0.06); border: 1px solid rgba(var(--color-primary-rgb), 0.18);
+  border-radius: 7px; flex-shrink: 0;
+  &:active { opacity: 0.7; }
+  &--char { width: 24px; height: 24px; margin-left: auto; }
+}
+.doc-edit-icon { font-size: 12px; color: var(--color-primary); }
 .primary-badge { background: rgba(139,92,246, 0.12); border: 1px solid rgba(139,92,246, 0.25); border-radius: 3px; padding: 1px 5px; }
 .primary-text { font-size: 9px; color: rgb(139,92,246); font-weight: 700; }
 .expand-icon { flex-shrink: 0; transition: transform 0.2s; &--open { transform: rotate(90deg); } }
@@ -834,6 +1011,8 @@ async function confirmExport() {
   &--active { background: rgba(var(--color-primary-rgb), 0.1); border-color: rgba(var(--color-primary-rgb), 0.4); .fmt-tab-text { color: var(--color-primary); } }
 }
 .fmt-tab-text { font-size: 12px; font-weight: 600; color: var(--text-muted); }
+.docs-section { display: flex; flex-direction: column; gap: 6px; }
+.docs-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; }
 .option-row {
   display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 6px 8px;
   background: var(--bg-input); border: 1px solid var(--border-subtle); border-radius: 8px;

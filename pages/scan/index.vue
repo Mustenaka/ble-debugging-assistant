@@ -126,6 +126,9 @@
                 <text class="recent-name">{{ recent.name }}</text>
                 <text class="recent-time">{{ formatRelativeTime(recent.lastConnected) }}</text>
               </view>
+              <view v-if="hasDeviceHistory(recent.deviceId)" class="recent-hist" @click.stop="goToHistory(recent.deviceId)">
+                <text class="rh-icon">🕓</text>
+              </view>
               <text class="recent-arr">›</text>
             </view>
           </view>
@@ -213,6 +216,7 @@ import {
   saveDevicePin, removeDevicePin, loadDevicePins,
   type DevicePinConfig,
 } from '../../utils/buffer'
+import { hasDeviceHistory } from '../../utils/deviceArchive'
 import DeviceItem from '../../components/DeviceItem.vue'
 import RadarScanAnimation from '../../components/RadarScanAnimation.vue'
 import SettingsPanel from '../../components/SettingsPanel.vue'
@@ -402,6 +406,10 @@ async function connectDevice(device: BleDevice) {
   } finally {
     connectingId.value = null
   }
+}
+
+function goToHistory(deviceId: string) {
+  uni.navigateTo({ url: `/pages/history/index?deviceId=${encodeURIComponent(deviceId)}` })
 }
 
 async function quickReconnect(recent: { deviceId: string; name: string }) {
@@ -669,6 +677,13 @@ function formatRelativeTime(ts: number): string {
 .recent-info { flex: 1; }
 .recent-name { font-size: 14px; color: var(--text-primary); font-weight: 500; display: block; }
 .recent-time { font-size: 11px; color: var(--text-muted); display: block; margin-top: 2px; }
+.recent-hist {
+  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+  background: rgba(var(--color-primary-rgb), 0.08); border: 1px solid rgba(var(--color-primary-rgb), 0.2);
+  border-radius: 7px; flex-shrink: 0;
+  &:active { opacity: 0.7; }
+}
+.rh-icon { font-size: 13px; }
 .recent-arr { font-size: 18px; color: var(--text-muted); }
 
 /* ── 设备列表 ── */
