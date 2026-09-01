@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here.
 
+## 2026-09-02
+
+### Added
+
+- Made operations runnable, Postman-style: each operation now carries an action (WRITE / WRITE NR / READ), an executable payload (HEX/ASCII), and an optional expected response (response characteristic, HEX prefix match, timeout) that judges every run as PASS / FAIL / TIMEOUT. Notify is enabled automatically on the response characteristic when needed, and every run is logged and persisted (last 10 per operation).
+- Added a Command Collection panel on the Debug page — a dedicated Commands tab on phones and a permanent third column on wide screens. Commands are grouped by service/characteristic with run-history dots, last RTT, one-tap ▶ execution, tap-to-fill into the send box, long-press actions (run / fill / edit / duplicate / delete), and per-characteristic quick add.
+- Added a unified Operation Editor (execution fields + expected response + field-level assertions + payload variants + collapsible doc fields) used by both the command panel and the annotation editor.
+- Added payload variants: enum values of one command (e.g. 01=on / 02=read / 03=off) shown as chips that execute directly.
+- Added field-level response assertions: bytes at a given offset must equal the expected HEX value, otherwise the run fails with the mismatch reason.
+- Added sequence runs: select multiple commands and execute them in order, with a per-command PASS/FAIL report modal and a summary system log.
+- Added "create command from log entry" (long-press a TX log) and "import quick commands" (bind existing global quick commands to a characteristic as runnable operations).
+- Added an "Operation Runs" section to the exported `SESSION_LOG.md` with result history, pass rate, and average RTT per command.
+
 ## 2026-09-01
 
 ### Added

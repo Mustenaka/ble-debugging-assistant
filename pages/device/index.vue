@@ -319,6 +319,7 @@ import {
   mergeAnnotationsIntoDocs,
   charAnnotationKey,
   getActiveSessionMeta,
+  loadOperationRuns,
   type AnnotationEditorInitial,
   type DeviceAnnotations,
   type OperationAnnotation,
@@ -691,6 +692,7 @@ async function confirmExport() {
       logs: session.logs,
       samples: session.savedSamples,
       sessionMeta: getActiveSessionMeta(deviceId),
+      operationRuns: loadOperationRuns(deviceId),
       options: {
         purpose: exportPurpose.value,
         notes: exportNotes.value,

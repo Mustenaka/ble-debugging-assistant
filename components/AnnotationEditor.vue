@@ -5,9 +5,6 @@
       <!-- 头部 -->
       <view class="ae-header">
         <view class="ae-header-left">
-          <view v-if="step === 'op'" class="ae-back" @click="step = 'main'">
-            <text class="ae-back-icon">‹</text>
-          </view>
           <view class="ae-title-col">
             <text class="ae-title">{{ headerTitle }}</text>
             <text class="ae-subtitle mono">{{ headerSubtitle }}</text>
@@ -18,8 +15,7 @@
 
       <scroll-view scroll-y class="ae-scroll">
 
-        <!-- ═══ 主步骤 ═══ -->
-        <view v-if="step === 'main'" class="ae-form">
+        <view class="ae-form">
 
           <!-- 服务模式 -->
           <template v-if="mode === 'service'">
@@ -109,90 +105,23 @@
           </view>
         </view>
 
-        <!-- ═══ 操作编辑步骤 ═══ -->
-        <view v-else class="ae-form">
-
-          <view class="ae-row">
-            <view class="ae-field ae-field--half">
-              <text class="ae-label">{{ t('annotation.opName') }}</text>
-              <input class="ae-input" :value="opForm.name" :placeholder="t('annotation.opNamePlaceholder')" placeholder-class="ae-ph"
-                @input="opForm.name = $event.detail.value" />
-            </view>
-            <view class="ae-field ae-field--half">
-              <text class="ae-label">{{ t('annotation.opId') }}</text>
-              <input class="ae-input mono" :value="opForm.operationId" :placeholder="t('annotation.opIdPlaceholder')" placeholder-class="ae-ph"
-                @input="opForm.operationId = $event.detail.value" />
-            </view>
-          </view>
-
-          <view class="ae-field">
-            <text class="ae-label">{{ t('annotation.opDescription') }}</text>
-            <textarea class="ae-textarea ae-textarea--short" :value="opForm.description" :placeholder="t('annotation.opDescriptionPlaceholder')" placeholder-class="ae-ph"
-              maxlength="300" :adjust-position="true" cursor-spacing="24"
-              @input="opForm.description = $event.detail.value" />
-          </view>
-
-          <!-- 请求段 -->
-          <view class="frame-section">
-            <text class="frame-title">{{ t('annotation.requestSection') }}</text>
-            <view class="ae-field">
-              <text class="ae-label">{{ t('annotation.frameDesc') }}</text>
-              <input class="ae-input mono" :value="opForm.request" :placeholder="t('annotation.frameDescPlaceholder')" placeholder-class="ae-ph"
-                @input="opForm.request = $event.detail.value" />
-            </view>
-            <view class="ae-field">
-              <text class="ae-label">{{ t('annotation.example') }}</text>
-              <input class="ae-input mono" :value="opForm.requestExample" :placeholder="t('annotation.examplePlaceholder')" placeholder-class="ae-ph"
-                @input="opForm.requestExample = $event.detail.value" />
-              <scroll-view v-if="txSamples.length" scroll-x class="sample-row">
-                <view class="sample-chips">
-                  <text class="sample-title">{{ t('annotation.fromSample') }}:</text>
-                  <view v-for="s in txSamples" :key="s.id" class="sample-chip" @click="opForm.requestExample = s.hex">
-                    <text class="sample-chip-text">{{ s.name }}</text>
-                  </view>
-                </view>
-              </scroll-view>
-            </view>
-            <FieldTable v-model:fields="opForm.requestFields" />
-          </view>
-
-          <!-- 响应段 -->
-          <view class="frame-section">
-            <text class="frame-title">{{ t('annotation.responseSection') }}</text>
-            <view class="ae-field">
-              <text class="ae-label">{{ t('annotation.frameDesc') }}</text>
-              <input class="ae-input mono" :value="opForm.response" :placeholder="t('annotation.frameDescPlaceholder')" placeholder-class="ae-ph"
-                @input="opForm.response = $event.detail.value" />
-            </view>
-            <view class="ae-field">
-              <text class="ae-label">{{ t('annotation.example') }}</text>
-              <input class="ae-input mono" :value="opForm.responseExample" :placeholder="t('annotation.examplePlaceholder')" placeholder-class="ae-ph"
-                @input="opForm.responseExample = $event.detail.value" />
-              <scroll-view v-if="rxSamples.length" scroll-x class="sample-row">
-                <view class="sample-chips">
-                  <text class="sample-title">{{ t('annotation.fromSample') }}:</text>
-                  <view v-for="s in rxSamples" :key="s.id" class="sample-chip" @click="opForm.responseExample = s.hex">
-                    <text class="sample-chip-text">{{ s.name }}</text>
-                  </view>
-                </view>
-              </scroll-view>
-            </view>
-            <FieldTable v-model:fields="opForm.responseFields" />
-          </view>
-
-          <view class="ae-field">
-            <text class="ae-label">{{ t('annotation.mockRule') }}</text>
-            <input class="ae-input" :value="opForm.mockRule" :placeholder="t('annotation.mockRulePlaceholder')" placeholder-class="ae-ph"
-              @input="opForm.mockRule = $event.detail.value" />
-          </view>
-
-          <view class="ae-btn ae-btn--save" @click="handleSaveOperation">
-            <text class="ae-btn-text">{{ t('common.save') }}</text>
-          </view>
-        </view>
-
         <view style="height: 20px;" />
       </scroll-view>
+
+      <!-- 操作编辑：统一命令编辑器（return 模式，不落库，保存回本地列表） -->
+      <OperationEditor
+        :visible="showOpEditor"
+        :device-id="deviceId"
+        :device-name="deviceName"
+        :serviceUUID="serviceUUID"
+        :charUUID="charUUID"
+        lock-target
+        :persist="false"
+        :initial="opInitial"
+        :samples="samples"
+        @close="showOpEditor = false"
+        @saved="onOpSaved"
+      />
     </view>
   </view>
 </template>
@@ -201,7 +130,7 @@
 import { ref, reactive, computed, watch } from 'vue'
 import { useI18n } from '../composables/useI18n'
 import { useResponsive } from '../composables/useResponsive'
-import { shortUUID, normalizeUUID } from '../utils/hex'
+import { shortUUID } from '../utils/hex'
 import type { BleProtocolSample } from '../utils/buffer'
 import {
   saveServiceAnnotation,
@@ -210,7 +139,7 @@ import {
   type DeviceAnnotations,
   type OperationAnnotation,
 } from '../utils/deviceArchive'
-import FieldTable from './FieldTable.vue'
+import OperationEditor from './OperationEditor.vue'
 
 const props = defineProps<{
   visible: boolean
@@ -231,30 +160,13 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const { isWideScreen } = useResponsive()
 
-const step = ref<'main' | 'op'>('main')
-
 const svcForm = reactive({ name: '', role: '', summary: '' })
 const charForm = reactive({ name: '', direction: '', valueFormat: '', description: '' })
 const ops = ref<OperationAnnotation[]>([])
 
+const showOpEditor = ref(false)
 const opEditIndex = ref<number | null>(null)
-const opForm = reactive<OperationAnnotation>(emptyOperation())
-
-function emptyOperation(): OperationAnnotation {
-  return {
-    id: `op_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-    name: '',
-    operationId: '',
-    description: '',
-    request: '',
-    response: '',
-    requestExample: '',
-    responseExample: '',
-    mockRule: '',
-    requestFields: [],
-    responseFields: [],
-  }
-}
+const opInitial = ref<OperationAnnotation | null>(null)
 
 const directionOptions = computed(() => [
   { value: 'TX', label: t('annotation.dirTx') },
@@ -262,32 +174,19 @@ const directionOptions = computed(() => [
   { value: 'TX/RX', label: t('annotation.dirBoth') },
 ])
 
-const headerTitle = computed(() => {
-  if (step.value === 'op') return t('annotation.editOperation')
-  return props.mode === 'service' ? t('annotation.editService') : t('annotation.editChar')
-})
+const headerTitle = computed(() =>
+  props.mode === 'service' ? t('annotation.editService') : t('annotation.editChar')
+)
 
 const headerSubtitle = computed(() => {
   if (props.mode === 'service') return shortUUID(props.serviceUUID)
   return `${shortUUID(props.serviceUUID)} / ${shortUUID(props.charUUID ?? '')}`
 })
 
-// 当前特征值的已存样例（按方向分组，供样例填入）
-const charSamples = computed(() => {
-  if (props.mode !== 'char' || !props.charUUID) return []
-  return (props.samples ?? []).filter(
-    (s) =>
-      normalizeUUID(s.serviceUUID) === normalizeUUID(props.serviceUUID) &&
-      normalizeUUID(s.characteristicUUID) === normalizeUUID(props.charUUID!)
-  )
-})
-const txSamples = computed(() => charSamples.value.filter((s) => s.direction === 'TX'))
-const rxSamples = computed(() => charSamples.value.filter((s) => s.direction === 'RX'))
-
 // 打开时载入初始值
 watch(() => props.visible, (v) => {
   if (!v) return
-  step.value = 'main'
+  showOpEditor.value = false
   const init = props.initial ?? {}
   svcForm.name = init.name ?? ''
   svcForm.role = init.role ?? ''
@@ -300,30 +199,27 @@ watch(() => props.visible, (v) => {
 })
 
 function handleClose() {
-  if (step.value === 'op') {
-    step.value = 'main'
-    return
-  }
   emit('close')
 }
 
-// ── 操作编辑 ────────────────────────────────────────────────────────────────
+// ── 操作编辑（统一命令编辑器）────────────────────────────────────────────────
 
 function openNewOperation() {
   opEditIndex.value = null
-  Object.assign(opForm, emptyOperation())
-  opForm.requestFields = []
-  opForm.responseFields = []
-  step.value = 'op'
+  opInitial.value = null
+  showOpEditor.value = true
 }
 
 function openEditOperation(index: number) {
   opEditIndex.value = index
-  const src = JSON.parse(JSON.stringify(ops.value[index])) as OperationAnnotation
-  Object.assign(opForm, emptyOperation(), src)
-  opForm.requestFields = src.requestFields ?? []
-  opForm.responseFields = src.responseFields ?? []
-  step.value = 'op'
+  opInitial.value = JSON.parse(JSON.stringify(ops.value[index]))
+  showOpEditor.value = true
+}
+
+function onOpSaved(op: OperationAnnotation) {
+  if (opEditIndex.value === null) ops.value.push(op)
+  else ops.value[opEditIndex.value] = op
+  showOpEditor.value = false
 }
 
 function removeOperation(index: number) {
@@ -335,24 +231,6 @@ function removeOperation(index: number) {
       if (res.confirm) ops.value.splice(index, 1)
     },
   })
-}
-
-function handleSaveOperation() {
-  if (!opForm.name.trim() && !opForm.operationId?.trim()) {
-    uni.showToast({ title: t('annotation.opNamePlaceholder'), icon: 'none' })
-    return
-  }
-  // 清理空字段行
-  const cleanFields = (rows: OperationAnnotation['requestFields']) =>
-    rows.filter((f) => f.offset || f.length || f.type || f.name || f.meaning)
-  const saved: OperationAnnotation = JSON.parse(JSON.stringify({
-    ...opForm,
-    requestFields: cleanFields(opForm.requestFields),
-    responseFields: cleanFields(opForm.responseFields),
-  }))
-  if (opEditIndex.value === null) ops.value.push(saved)
-  else ops.value[opEditIndex.value] = saved
-  step.value = 'main'
 }
 
 // ── 保存 ────────────────────────────────────────────────────────────────────

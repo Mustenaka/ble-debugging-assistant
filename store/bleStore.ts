@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, toRaw } from 'vue'
 import {
   bleManager,
   BleAdapterState,
@@ -30,6 +30,11 @@ import {
   recordSessionHeartbeat,
   endSessionRecord,
   flushAllSessionRecords,
+  operationPayload,
+  operationRunKey,
+  appendOperationRun,
+  type OperationAnnotation,
+  type OperationRunRecord,
 } from '../utils/deviceArchive'
 import {
   HEARTBEAT_LABEL,
@@ -42,6 +47,19 @@ import {
 } from '../utils/heartbeat'
 
 export type DisplayMode = 'hex' | 'ascii'
+
+/** 正在等待响应判定的命令执行 */
+export interface PendingOpRun {
+  runKey: string
+  op: OperationAnnotation
+  serviceUUID: string
+  characteristicUUID: string
+  requestHex: string
+  variantLabel?: string
+  sentAt: number
+  timeoutTimer: ReturnType<typeof setTimeout> | null
+  resolve: (record: OperationRunRecord) => void
+}
 
 // ─── DeviceSession：每设备独立数据容器 ──────────────────────────────────────
 
@@ -65,6 +83,9 @@ export interface DeviceSession {
   rxDisplayMode: DisplayMode
   txDisplayMode: DisplayMode
   heartbeat: HeartbeatRuntime
+  pendingOpRun: PendingOpRun | null
+  /** 命令执行互斥：从进入 runOperation 到判定结束（含 await 间隙） */
+  opRunBusy: boolean
 }
 
 function createSession(device: BleDevice): DeviceSession {
@@ -89,6 +110,8 @@ function createSession(device: BleDevice): DeviceSession {
     txDisplayMode: 'hex',
     // reactive: 心跳统计需要在 UI 中实时刷新
     heartbeat: reactive(createHeartbeatRuntime()),
+    pendingOpRun: null,
+    opRunBusy: false,
   }
 }
 
@@ -211,7 +234,8 @@ export const useBleStore = defineStore('ble', () => {
         serviceUUID: serviceId,
         characteristicUUID: characteristicId,
       }
-      _matchHeartbeatAck(deviceId, session, characteristicId, hex, entry)
+      const consumedByOpRun = _matchOpRunResponse(deviceId, session, characteristicId, hex, entry)
+      if (!consumedByOpRun) _matchHeartbeatAck(deviceId, session, characteristicId, hex, entry)
       session.logBuffer.push(entry)
       session.logs = session.logBuffer.getAll()
       recordSessionLog(deviceId, entry)
@@ -224,6 +248,7 @@ export const useBleStore = defineStore('ble', () => {
         const session = getSession(deviceId)
         if (!session) return
         stopHeartbeatTest(deviceId, true)
+        _cancelPendingOpRun(deviceId, session, 'disconnected')
         _addSysLogToSession(session, `设备断开连接: ${session.device.name}`)
         endSessionRecord(deviceId, 'lost')
         _stopRssiPoll(session)
@@ -299,6 +324,7 @@ export const useBleStore = defineStore('ble', () => {
     const name = session?.device.name ?? id
     if (session) _stopRssiPoll(session)
     stopHeartbeatTest(id, true)
+    if (session) _cancelPendingOpRun(id, session, 'disconnected')
     endSessionRecord(id, 'user')
     try {
       await bleManager.disconnect(id)
@@ -472,11 +498,266 @@ export const useBleStore = defineStore('ble', () => {
     return actual
   }
 
-  // ── 心跳持续连接测试（每 session 独立）───────────────────────────────────
-
   function _cleanHexStr(s: string): string {
     return s.replace(/[^0-9A-Fa-f]/g, '').toUpperCase()
   }
+
+  // ── 命令执行引擎（Runnable Operation，Postman 式）─────────────────────────
+
+  /** 字段级断言：响应 offset 处的字节序列应等于 hexValue；返回失败原因或 null */
+  function _checkFieldAssertions(responseHex: string, op: OperationAnnotation): string | null {
+    const assertions = op.expect?.fieldAssertions ?? []
+    if (!assertions.length) return null
+    const bytes = _cleanHexStr(responseHex).match(/.{2}/g) ?? []
+    for (const a of assertions) {
+      const expected = _cleanHexStr(a.hexValue).match(/.{2}/g) ?? []
+      if (!expected.length) continue
+      for (let i = 0; i < expected.length; i++) {
+        const actual = bytes[a.offset + i]
+        if (actual !== expected[i]) {
+          return `offset ${a.offset + i}: expect ${expected[i]} got ${actual ?? '∅'}`
+        }
+      }
+    }
+    return null
+  }
+
+  function _finishOpRun(deviceId: string, session: DeviceSession, record: OperationRunRecord) {
+    const pending = session.pendingOpRun
+    if (!pending) return
+    if (pending.timeoutTimer) {
+      clearTimeout(pending.timeoutTimer)
+      pending.timeoutTimer = null
+    }
+    session.pendingOpRun = null
+    session.opRunBusy = false
+    appendOperationRun(deviceId, pending.runKey, record)
+    pending.resolve(record)
+    triggerSessionUpdate()
+  }
+
+  function _cancelPendingOpRun(deviceId: string, session: DeviceSession, reason: string) {
+    const pending = session.pendingOpRun
+    if (!pending) return
+    _finishOpRun(deviceId, session, {
+      timestamp: Date.now(),
+      requestHex: pending.requestHex,
+      responseHex: null,
+      rttMs: null,
+      result: 'error',
+      reason,
+      variantLabel: pending.variantLabel,
+    })
+  }
+
+  /** RX 是否被待判定命令消费（是则改写日志标签并出结果） */
+  function _matchOpRunResponse(
+    deviceId: string,
+    session: DeviceSession,
+    characteristicId: string,
+    hex: string,
+    entry: LogEntry,
+  ): boolean {
+    const pending = session.pendingOpRun
+    if (!pending) return false
+    const expect = pending.op.expect
+    if (!expect?.enabled) return false
+    // READ 动作未指定响应特征值时，默认以被读特征值判定
+    const expectedChar = expect.responseCharacteristicUUID ||
+      ((pending.op.actionType === 'read' && pending.characteristicUUID) ? pending.characteristicUUID : '')
+    if (expectedChar && normalizeUUID(expectedChar) !== normalizeUUID(characteristicId)) return false
+    if (expect.matchHex && !_cleanHexStr(hex).startsWith(_cleanHexStr(expect.matchHex))) return false
+
+    const rtt = Date.now() - pending.sentAt
+    const assertionFailure = _checkFieldAssertions(hex, pending.op)
+    const result: OperationRunRecord['result'] = assertionFailure ? 'fail' : 'pass'
+    entry.operationId = pending.op.operationId || pending.op.id
+    entry.label = assertionFailure
+      ? `${pending.op.name} · FAIL · ${assertionFailure}`
+      : `${pending.op.name} · PASS · ${rtt}ms`
+    _finishOpRun(deviceId, session, {
+      timestamp: Date.now(),
+      requestHex: pending.requestHex,
+      responseHex: hex,
+      rttMs: rtt,
+      result,
+      reason: assertionFailure ?? undefined,
+      variantLabel: pending.variantLabel,
+    })
+    return true
+  }
+
+  async function runOperation(params: {
+    deviceId?: string
+    serviceUUID: string
+    characteristicUUID: string
+    op: OperationAnnotation
+    payloadOverride?: string
+    variantLabel?: string
+  }): Promise<OperationRunRecord> {
+    const id = params.deviceId ?? activeSessionId.value
+    const session = getSession(id)
+    const now = Date.now()
+    const fail = (result: OperationRunRecord['result'], reason: string, requestHex = ''): OperationRunRecord => ({
+      timestamp: now, requestHex, responseHex: null, rttMs: null, result, reason,
+      variantLabel: params.variantLabel,
+    })
+
+    if (!session || !bleManager.isDeviceConnected(id)) return fail('error', 'not-connected')
+    if (session.pendingOpRun || session.opRunBusy) return fail('error', 'busy')
+    session.opRunBusy = true
+
+    const op = params.op
+    const runKey = operationRunKey(params.serviceUUID, params.characteristicUUID, op.id || op.operationId || op.name)
+    const actionType = op.actionType ?? 'write'
+
+    try {
+      // 确保该服务的特征值已发现（部分平台写前必须 getCharacteristics）
+      if (!session.characteristics.get(params.serviceUUID)?.length) {
+        try {
+          await loadCharacteristics(params.serviceUUID, id)
+        } catch { /* 发现失败不阻断执行 */ }
+      }
+
+      // 期望响应时自动为响应特征值开启 Notify（若其支持）
+      if (op.expect?.enabled) {
+        const respChar = op.expect.responseCharacteristicUUID ||
+          (actionType === 'read' ? params.characteristicUUID : '')
+        if (respChar) {
+          for (const [svcUUID, chars] of session.characteristics) {
+            const target = chars.find((c) => normalizeUUID(c.uuid) === normalizeUUID(respChar))
+            if (target && (target.properties.notify || target.properties.indicate)) {
+              try {
+                await bleManager.setNotify(id, svcUUID, target.uuid, true)
+              } catch { /* 可能已开启 */ }
+              break
+            }
+          }
+        }
+      }
+
+      // READ 动作：读请求 + 等待特征值变化回调
+      if (actionType === 'read') {
+        const promise = _armOpExpectation(id, session, runKey, op, '', params.serviceUUID, params.characteristicUUID, params.variantLabel)
+        try {
+          _addSysLogToSession(session, `▶ ${op.name} (READ ${shortUUID(params.characteristicUUID)})`)
+          triggerSessionUpdate()
+          await bleManager.readCharacteristic(id, params.serviceUUID, params.characteristicUUID)
+        } catch (e: any) {
+          if (promise) {
+            _cancelPendingOpRun(id, session, e?.message ?? 'read failed')
+            return promise
+          }
+          const record = fail('error', e?.message ?? 'read failed')
+          appendOperationRun(id, runKey, record)
+          return record
+        }
+        if (promise) return promise
+        const record = { ...fail('sent', ''), reason: undefined }
+        appendOperationRun(id, runKey, record)
+        triggerSessionUpdate()
+        return record
+      }
+
+      // WRITE / WRITE_NR 动作
+      const payloadStr = (params.payloadOverride ?? '').trim() || operationPayload(op)
+      if (!payloadStr) return fail('error', 'empty-payload')
+      let buf: ArrayBuffer
+      try {
+        buf = (op.payloadMode ?? 'hex') === 'hex' ? hexToBuf(payloadStr) : asciiToBuf(payloadStr)
+      } catch {
+        return fail('error', 'invalid-payload')
+      }
+      const requestHex = bufToHex(buf)
+
+      const promise = _armOpExpectation(id, session, runKey, op, requestHex, params.serviceUUID, params.characteristicUUID, params.variantLabel)
+      try {
+        await bleManager.write(id, params.serviceUUID, params.characteristicUUID, buf, actionType === 'write')
+      } catch (e: any) {
+        _addSysLogToSession(session, `✗ ${op.name} 发送失败: ${e?.message ?? e}`)
+        triggerSessionUpdate()
+        if (promise) {
+          _cancelPendingOpRun(id, session, e?.message ?? 'write failed')
+          return promise
+        }
+        const record = fail('error', e?.message ?? 'write failed', requestHex)
+        appendOperationRun(id, runKey, record)
+        return record
+      }
+      session.txBytes += buf.byteLength
+      const entry: LogEntry = {
+        id: `log_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+        timestamp: Date.now(),
+        direction: 'TX',
+        hex: requestHex,
+        ascii: bufToAscii(buf),
+        rawLength: buf.byteLength,
+        label: `▶ ${op.name}${params.variantLabel ? ` [${params.variantLabel}]` : ''}`,
+        serviceUUID: params.serviceUUID,
+        characteristicUUID: params.characteristicUUID,
+        operationId: op.operationId || op.id,
+      }
+      session.logBuffer.push(entry)
+      session.logs = session.logBuffer.getAll()
+      recordSessionLog(id, entry)
+      triggerSessionUpdate()
+      if (promise) return promise
+      const record: OperationRunRecord = {
+        timestamp: now, requestHex, responseHex: null, rttMs: null, result: 'sent',
+        variantLabel: params.variantLabel,
+      }
+      appendOperationRun(id, runKey, record)
+      triggerSessionUpdate()
+      return record
+    } finally {
+      // 有 pending（等待响应判定）时保持互斥，由 _finishOpRun 释放；其余路径立即释放
+      if (!session.pendingOpRun) session.opRunBusy = false
+    }
+  }
+
+  /** 布好期望响应的判定钩子；未启用期望时返回 null */
+  function _armOpExpectation(
+    deviceId: string,
+    session: DeviceSession,
+    runKey: string,
+    op: OperationAnnotation,
+    requestHex: string,
+    serviceUUID: string,
+    characteristicUUID: string,
+    variantLabel?: string,
+  ): Promise<OperationRunRecord> | null {
+    if (!op.expect?.enabled) return null
+    return new Promise<OperationRunRecord>((resolve) => {
+      const pending: PendingOpRun = {
+        runKey,
+        op,
+        serviceUUID,
+        characteristicUUID,
+        requestHex,
+        variantLabel,
+        sentAt: Date.now(),
+        timeoutTimer: null,
+        resolve,
+      }
+      pending.timeoutTimer = setTimeout(() => {
+        pending.timeoutTimer = null
+        // session 经 Vue reactive 包装，存入的对象取出为 proxy，须比较 raw 身份
+        if (toRaw(session.pendingOpRun) !== pending) return
+        _addSysLogToSession(session, `⚠ ${op.name} 响应超时 (${op.expect?.timeoutMs ?? 0}ms)`)
+        _finishOpRun(deviceId, session, {
+          timestamp: Date.now(),
+          requestHex,
+          responseHex: null,
+          rttMs: null,
+          result: 'timeout',
+          variantLabel,
+        })
+      }, Math.max(100, op.expect?.timeoutMs ?? 2000))
+      session.pendingOpRun = pending
+    })
+  }
+
+  // ── 心跳持续连接测试（每 session 独立）───────────────────────────────────
 
   function _matchHeartbeatAck(
     deviceId: string,
@@ -720,6 +1001,7 @@ export const useBleStore = defineStore('ble', () => {
         bleManager.getRSSI(deviceId).catch(() => {
           _stopRssiPoll(session)
           stopHeartbeatTest(deviceId, true)
+          _cancelPendingOpRun(deviceId, session, 'disconnected')
           endSessionRecord(deviceId, 'lost')
           const name = session.device.name
           sessions.value.delete(deviceId)
@@ -738,6 +1020,7 @@ export const useBleStore = defineStore('ble', () => {
 
   function reset() {
     sessions.value.forEach((_, deviceId) => stopHeartbeatTest(deviceId, true))
+    sessions.value.forEach((session, deviceId) => _cancelPendingOpRun(deviceId, session, 'reset'))
     sessions.value.forEach((session) => _stopRssiPoll(session))
     sessions.value.clear()
     activeSessionId.value = ''
@@ -814,6 +1097,7 @@ export const useBleStore = defineStore('ble', () => {
     negotiateMtu,
     startHeartbeatTest,
     stopHeartbeatTest,
+    runOperation,
     reset,
   }
 })

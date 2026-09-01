@@ -65,11 +65,30 @@
       </view>
     </view>
 
+    <!-- 手机端：命令 / 控制台 Tab -->
+    <view v-if="!isWideScreen" class="body-tabs">
+      <view class="body-tab" :class="{ 'body-tab--active': bodyTab === 'commands' }" @click="bodyTab = 'commands'">
+        <text class="body-tab-text" :class="{ 'body-tab-text--active': bodyTab === 'commands' }">⌘ {{ t('command.tabCommands') }}</text>
+      </view>
+      <view class="body-tab" :class="{ 'body-tab--active': bodyTab === 'console' }" @click="bodyTab = 'console'">
+        <text class="body-tab-text" :class="{ 'body-tab-text--active': bodyTab === 'console' }">⌁ {{ t('command.tabConsole') }}</text>
+      </view>
+    </view>
+
     <!-- 主体 -->
     <view class="debug-body" :class="{ 'debug-body--wide': isWideScreen }">
 
+      <!-- 命令集合面板（宽屏常驻左栏 / 手机端 Tab 页） -->
+      <view
+        v-if="isWideScreen || bodyTab === 'commands'"
+        class="cmd-panel-wrap"
+        :class="{ 'cmd-panel-wrap--wide': isWideScreen }"
+      >
+        <CommandPanel ref="commandPanelRef" @fill="handleCommandFill" />
+      </view>
+
       <!-- 日志面板 -->
-      <view class="log-panel-wrap" :class="{ 'log-panel-wrap--wide': isWideScreen }">
+      <view v-show="isWideScreen || bodyTab === 'console'" class="log-panel-wrap" :class="{ 'log-panel-wrap--wide': isWideScreen }">
         <BleLogPanel
           :logs="bleStore.logs"
           :tx-bytes="bleStore.txBytes"
@@ -87,7 +106,7 @@
       </view>
 
       <!-- 发送面板 -->
-      <view class="send-panel" :class="{ 'send-panel--wide': isWideScreen }">
+      <view v-show="isWideScreen || bodyTab === 'console'" class="send-panel" :class="{ 'send-panel--wide': isWideScreen }">
 
         <!-- 目标信息 -->
         <view class="target-info">
@@ -117,6 +136,7 @@
         <view v-else class="send-area">
           <HexInput
             :quick-commands="bleStore.quickCommands"
+            :inject-data="hexInject"
             :is-sending="isSending"
             :disabled="!canWrite || !bleStore.isConnected"
             :hex-placeholder="t('hexInput.hexPlaceholder')"
@@ -269,6 +289,20 @@
     <!-- 心跳测试面板 -->
     <HeartbeatPanel :visible="showHeartbeatPanel" @close="showHeartbeatPanel = false" />
 
+    <!-- 由日志生成命令定义 -->
+    <OperationEditor
+      :visible="showFromLogEditor"
+      :device-id="bleStore.activeSessionId"
+      :device-name="bleStore.connectedDevice?.name ?? ''"
+      :serviceUUID="fromLogTarget.serviceUUID"
+      :charUUID="fromLogTarget.charUUID"
+      lock-target
+      :persist="true"
+      :initial="fromLogTarget.initial"
+      @close="showFromLogEditor = false"
+      @saved="onFromLogSaved"
+    />
+
   </view>
 </template>
 
@@ -288,6 +322,10 @@ import DiffModal from '../../components/DiffModal.vue'
 import LeftTabBar from '../../components/LeftTabBar.vue'
 import DeviceTabBar from '../../components/DeviceTabBar.vue'
 import HeartbeatPanel from '../../components/HeartbeatPanel.vue'
+import CommandPanel from '../../components/CommandPanel.vue'
+import OperationEditor from '../../components/OperationEditor.vue'
+import type { OperationAnnotation } from '../../utils/deviceArchive'
+import type { LogEntry } from '../../utils/buffer'
 
 const bleStore = useBleStore()
 const appStore = useAppStore()
@@ -304,6 +342,15 @@ const logDisplayMode = ref<'hex' | 'ascii' | 'both'>('hex')
 const { isWideScreen } = useResponsive()
 const showHeartbeatPanel = ref(false)
 const showSaveQuickDialog = ref(false)
+
+// ── 命令面板 ──
+const bodyTab = ref<'commands' | 'console'>('console')
+const commandPanelRef = ref<InstanceType<typeof CommandPanel> | null>(null)
+const hexInject = ref<{ data: string; mode: 'hex' | 'ascii'; label?: string; ts: number } | null>(null)
+const showFromLogEditor = ref(false)
+const fromLogTarget = ref<{ serviceUUID: string; charUUID: string; initial: OperationAnnotation | null }>({
+  serviceUUID: '', charUUID: '', initial: null,
+})
 const quickCmdName = ref('')
 const quickCmdType = ref<QuickCommandType>('custom')
 const quickCmdDescription = ref('')
@@ -458,13 +505,57 @@ function confirmSaveQuick() {
   uni.showToast({ title: t('debug.saved'), icon: 'success' })
 }
 
-function handleSaveLogSample(entry: any) {
+function _saveSampleFromLog(entry: LogEntry) {
   const saved = bleStore.saveLogAsProtocolSample(entry.id)
   if (!saved) {
     uni.showToast({ title: t('debug.sampleSaveFailed'), icon: 'none' })
     return
   }
   uni.showToast({ title: t('debug.sampleSaved'), icon: 'success', duration: 1200 })
+}
+
+function handleSaveLogSample(entry: LogEntry) {
+  // TX 日志：可选保存样例或生成命令定义；其余保持原有单一行为
+  if (entry.direction !== 'TX' || !entry.serviceUUID || !entry.characteristicUUID) {
+    _saveSampleFromLog(entry)
+    return
+  }
+  uni.showActionSheet({
+    itemList: [t('command.saveAsSample'), t('command.fromLogCreate')],
+    success: (res) => {
+      if (res.tapIndex === 0) {
+        _saveSampleFromLog(entry)
+      } else if (res.tapIndex === 1) {
+        fromLogTarget.value = {
+          serviceUUID: entry.serviceUUID!,
+          charUUID: entry.characteristicUUID!,
+          initial: {
+            id: `op_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            name: '',
+            operationId: '',
+            requestFields: [],
+            responseFields: [],
+            actionType: 'write',
+            payloadMode: 'hex',
+            payload: entry.hex,
+            requestExample: entry.hex,
+          },
+        }
+        showFromLogEditor.value = true
+      }
+    },
+  })
+}
+
+function onFromLogSaved() {
+  showFromLogEditor.value = false
+  commandPanelRef.value?.refresh?.()
+  uni.showToast({ title: t('command.saved'), icon: 'success', duration: 1200 })
+}
+
+function handleCommandFill(payload: { data: string; mode: 'hex' | 'ascii'; serviceUUID: string; charUUID: string }) {
+  hexInject.value = { data: payload.data, mode: payload.mode, ts: Date.now() }
+  if (!isWideScreen.value) bodyTab.value = 'console'
 }
 
 function goToDevice() { uni.switchTab({ url: '/pages/device/index' }) }
@@ -551,8 +642,28 @@ function stopHeartbeatFromStrip() {
 .mi-text { font-size: 14px; color: var(--text-primary); &.danger { color: var(--color-danger); } }
 .menu-divider { height: 1px; background: var(--border-subtle); }
 
+/* ── 命令/控制台 Tab（手机端）── */
+.body-tabs {
+  display: flex; background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-subtle); flex-shrink: 0;
+}
+.body-tab {
+  flex: 1; padding: 9px 0; display: flex; align-items: center; justify-content: center;
+  border-bottom: 2px solid transparent;
+  &--active { border-bottom-color: var(--color-primary); }
+  &:active { opacity: 0.8; }
+}
+.body-tab-text {
+  font-size: 12px; font-weight: 700; color: var(--text-muted); letter-spacing: 0.5px;
+  &--active { color: var(--color-primary); }
+}
+
 /* ── 主体布局 ── */
 .debug-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; &--wide { flex-direction: row; } }
+.cmd-panel-wrap {
+  flex: 1; min-height: 0; overflow: hidden;
+  &--wide { flex: 0 0 300px; min-width: 260px; border-right: 1px solid var(--border-subtle); }
+}
 .log-panel-wrap { flex: 1; min-height: 0; overflow: hidden; &--wide { flex: 55; border-right: 1px solid var(--border-subtle); } }
 .send-panel {
   background: var(--bg-panel); border-top: 1px solid var(--border-subtle);

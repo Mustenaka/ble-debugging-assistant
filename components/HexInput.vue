@@ -74,7 +74,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { hexToBuf, asciiToBuf, isValidHex, bufToHex, bufToAscii, normalizeHex } from '../utils/hex'
 import type { QuickCommand } from '../utils/buffer'
 
@@ -91,6 +91,8 @@ const props = defineProps<{
   saveAsQuickLabel?: string
   sendLabel?: string
   sendingLabel?: string
+  /** 外部注入内容（命令面板"填入"），ts 变化时生效 */
+  injectData?: { data: string; mode: 'hex' | 'ascii'; label?: string; ts: number } | null
 }>()
 
 const emit = defineEmits<{
@@ -168,6 +170,16 @@ async function pasteInput() {
 function applyQuickCommand(cmd: QuickCommand) {
   mode.value = cmd.mode; inputValue.value = cmd.data; activeQuickCommandName.value = cmd.name; validateInput(cmd.data)
 }
+
+// 命令面板"填入"注入
+watch(() => props.injectData?.ts, () => {
+  const inject = props.injectData
+  if (!inject) return
+  mode.value = inject.mode
+  inputValue.value = inject.data
+  activeQuickCommandName.value = inject.label ?? ''
+  validateInput(inject.data)
+})
 
 function commandTypeLabel(cmd: QuickCommand): string {
   const map: Record<string, string> = {

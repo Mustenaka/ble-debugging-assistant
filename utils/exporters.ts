@@ -33,8 +33,10 @@ import { isHeartbeatLabel } from './heartbeat'
 import {
   operationToInterfaceDoc,
   sessionDurationMs,
+  operationRunKey,
   type DeviceAnnotations,
   type SessionMeta,
+  type OperationRunRecord,
 } from './deviceArchive'
 
 export interface DebugPackExportOptions {
@@ -56,6 +58,8 @@ export interface ExportContext {
   logs: LogEntry[]
   samples: BleProtocolSample[]
   sessionMeta: SessionMeta | null
+  /** 命令执行记录（runKey → 最近执行列表），进 SESSION_LOG.md */
+  operationRuns?: Record<string, OperationRunRecord[]>
   options: DebugPackExportOptions
 }
 
@@ -335,6 +339,37 @@ export function buildSessionLogMarkdown(ctx: ExportContext): string {
     endpointStats.forEach((stat) => {
       lines.push(`| ${stat.name} | ${stat.tx} | ${formatBytesText(stat.txBytes)} | ${stat.rx} | ${formatBytesText(stat.rxBytes)} |`)
     })
+    lines.push('')
+  }
+
+  // 命令执行记录（Runnable Operation 判定历史）
+  const runs = ctx.operationRuns ?? {}
+  const runKeys = Object.keys(runs).filter((k) => runs[k]?.length)
+  if (runKeys.length) {
+    // runKey → 命令名映射（注释命令按 op.id 对应；builtin 前缀直接展示）
+    const nameByKey = new Map<string, string>()
+    for (const charAnn of Object.values(ctx.annotations?.characteristics ?? {})) {
+      for (const op of charAnn.operations ?? []) {
+        const key = operationRunKey(charAnn.serviceUUID, charAnn.uuid, op.id || op.operationId || op.name)
+        nameByKey.set(key, op.name || op.operationId || op.id)
+      }
+    }
+    lines.push('## Operation Runs', '')
+    lines.push('| Operation | Results (newest first) | Pass Rate | Avg RTT | Last Run |')
+    lines.push('|:----------|:-----------------------|:----------|:--------|:---------|')
+    for (const key of runKeys) {
+      const list = runs[key]
+      const name = nameByKey.get(key) ?? key.split('::').pop()?.replace(/^builtin_/, '') ?? key
+      const symbols = list.map((r) =>
+        r.result === 'pass' ? '✓' : r.result === 'sent' ? '·' : r.result === 'timeout' ? '⏱' : '✗'
+      ).join(' ')
+      const judged = list.filter((r) => r.result !== 'sent')
+      const passed = judged.filter((r) => r.result === 'pass').length
+      const passRate = judged.length ? `${Math.round((passed / judged.length) * 100)}%` : '—'
+      const rtts = list.filter((r) => r.rttMs != null).map((r) => r.rttMs as number)
+      const avgRtt = rtts.length ? `${Math.round(rtts.reduce((s, v) => s + v, 0) / rtts.length)}ms` : '—'
+      lines.push(`| ${name} | ${symbols} | ${passRate} | ${avgRtt} | ${formatTimestamp(list[0].timestamp, true)} |`)
+    }
     lines.push('')
   }
 
