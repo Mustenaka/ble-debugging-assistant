@@ -130,6 +130,7 @@ export default {
    全局重置 & 工具类
    ═══════════════════════════════════════════════════════ */
 page {
+  height: 100%;
   background-color: #0A0F1C;
   color: #E2E8F0;
   font-size: 14px;

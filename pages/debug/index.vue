@@ -605,7 +605,8 @@ function stopHeartbeatFromStrip() {
 
 <style lang="scss" scoped>
 .debug-page {
-  height: 100vh; background: var(--bg-base); display: flex; flex-direction: column; overflow: hidden;
+  /* 100% 跟随 WebView 可视高度；100vh 在部分 Android WebView 上略大于可视区，底部内容会被 TabBar 遮住 */
+  height: 100%; background: var(--bg-base); display: flex; flex-direction: column; overflow: hidden;
   &--wide { padding-left: 60px; } // 左侧导航栏偏移
 }
 
@@ -697,13 +698,15 @@ function stopHeartbeatFromStrip() {
 .send-panel {
   background: var(--bg-panel); border-top: 1px solid var(--border-subtle);
   padding: 14px; display: flex; flex-direction: column; gap: 12px;
-  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
-  overflow-y: auto; max-height: 55vh;
-  &--wide { flex: 45; max-height: 100vh; border-top: none; border-left: 1px solid var(--border-subtle); min-width: 280px; }
+  /* 底部预留 TabBar/手势条可能遮挡的高度，保证最后一块（协议解析）能滚到 */
+  padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+  /* 百分比相对 .debug-body 的定高解析；55vh 在部分 WebView 上会超出可视区，底部的协议解析被裁掉 */
+  overflow-y: auto; flex: 0 1 auto; min-height: 0; max-height: 58%;
+  &--wide { flex: 45; max-height: 100%; border-top: none; border-left: 1px solid var(--border-subtle); min-width: 280px; }
 }
 
 /* ── 目标信息 ── */
-.target-info { background: var(--bg-elevated); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 5px; }
+.target-info { flex-shrink: 0; background: var(--bg-elevated); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 5px; }
 .target-row { display: flex; align-items: center; gap: 8px; }
 .target-label { font-size: 11px; color: var(--text-muted); min-width: 36px; font-weight: 600; }
 .target-uuid { font-size: 12px; color: var(--color-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -714,18 +717,19 @@ function stopHeartbeatFromStrip() {
 .cprop-r { background: rgba(var(--color-info, 96,165,250), 0.12); color: var(--color-info); }
 
 /* ── 无特征值提示 ── */
-.no-char-tip { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 24px 0; }
+.no-char-tip { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 24px 0; }
 .tip-icon { font-size: 28px; color: var(--color-warning); }
 .tip-text { font-size: 13px; color: var(--text-muted); text-align: center; }
 .tip-btn { padding: 8px 20px; background: rgba(var(--color-primary-rgb), 0.08); border: 1px solid rgba(var(--color-primary-rgb), 0.25); border-radius: 8px; &:active { opacity: 0.75; } }
 .tip-btn-text { font-size: 13px; color: var(--color-primary); font-weight: 500; }
 
-.send-area { display: flex; flex-direction: column; gap: 10px; }
+.send-area { flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; }
 .no-write-tip { padding: 8px 12px; background: rgba(var(--color-warning-rgb), 0.08); border: 1px solid rgba(var(--color-warning-rgb), 0.2); border-radius: 8px; }
 .no-write-text { font-size: 12px; color: var(--color-warning); }
 
 /* ── 协议解析 ── */
-.protocol-section { background: var(--bg-elevated); border-radius: 10px; border: 1px solid var(--border-subtle); overflow: hidden; }
+/* flex-shrink: 0 —— overflow:hidden 的 flex 子项最小高度为 0，面板到达 max-height 时会被压成 0 高而不是让面板滚动 */
+.protocol-section { flex-shrink: 0; background: var(--bg-elevated); border-radius: 10px; border: 1px solid var(--border-subtle); overflow: hidden; }
 .protocol-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; &:active { opacity: 0.7; } }
 .protocol-title { font-size: 12px; color: var(--text-secondary); font-weight: 600; }
 .protocol-arrow { font-size: 16px; color: var(--text-muted); transition: transform 0.2s; &.arrow--open { transform: rotate(90deg); } }

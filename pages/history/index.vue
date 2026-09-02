@@ -485,7 +485,7 @@ function rssiRangeText(meta: SessionMeta): string {
 
 <style lang="scss" scoped>
 .history-page {
-  height: 100vh;
+  height: 100%;
   background: var(--bg-base);
   display: flex;
   flex-direction: column;

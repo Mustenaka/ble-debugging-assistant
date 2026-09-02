@@ -146,7 +146,7 @@
         </view>
         <view class="field-group">
           <text class="field-label">{{ t('protocol.pluginName') }}</text>
-          <input class="field-input" v-model="editorName" :placeholder="t('protocol.namePlaceholder')" placeholder-class="field-ph" maxlength="30" />
+          <input class="field-input" :value="editorName" :placeholder="t('protocol.namePlaceholder')" placeholder-class="field-ph" maxlength="30" @input="editorName = evtValue($event)" />
         </view>
         <view class="field-group">
           <view class="code-label-row">
@@ -245,15 +245,15 @@
         </view>
         <view class="field-group">
           <text class="field-label">{{ t('collection.nameLabel') }}</text>
-          <input class="field-input" v-model="colForm.name" placeholder-class="field-ph" maxlength="40" />
+          <input class="field-input" :value="colForm.name" placeholder-class="field-ph" maxlength="40" @input="colForm.name = evtValue($event)" />
         </view>
         <view class="field-group">
           <text class="field-label">{{ t('collection.descLabel') }}</text>
-          <input class="field-input" v-model="colForm.description" :placeholder="t('collection.descPlaceholder')" placeholder-class="field-ph" maxlength="120" />
+          <input class="field-input" :value="colForm.description" :placeholder="t('collection.descPlaceholder')" placeholder-class="field-ph" maxlength="120" @input="colForm.description = evtValue($event)" />
         </view>
         <view class="field-group">
           <text class="field-label">{{ t('collection.namePattern') }}</text>
-          <input class="field-input mono" v-model="colForm.namePattern" :placeholder="t('collection.namePatternPlaceholder')" placeholder-class="field-ph" maxlength="60" />
+          <input class="field-input mono" :value="colForm.namePattern" :placeholder="t('collection.namePatternPlaceholder')" placeholder-class="field-ph" maxlength="60" @input="colForm.namePattern = evtValue($event)" />
         </view>
         <view class="editor-actions">
           <view class="editor-btn editor-btn--cancel" @click="showColEditor = false"><text>{{ t('common.cancel') }}</text></view>
@@ -334,6 +334,10 @@ function previewStatsText(p: ImportPreview): string {
 function createNew() {
   const col = collectionStore.create(t('collection.newDefaultName'))
   openColEdit(col)
+}
+
+function evtValue(e: any): string {
+  return String(e?.detail?.value ?? '')
 }
 
 function openDetail(col: BleCollection) {
