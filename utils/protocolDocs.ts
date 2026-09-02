@@ -17,6 +17,8 @@ export interface ProtocolInterfaceDoc {
   response?: string
   requestExample?: string
   responseExample?: string
+  /** 可执行载荷模板（含 {{len}} {{sum}} 等占位符时与 requestExample 不同） */
+  payload?: string
   mock?: string
   description?: string
   requestFields: ProtocolFieldDoc[]
@@ -86,6 +88,7 @@ function assignValue(target: any, key: string, value: string) {
   else if (k === 'operationid') target.operationId = value
   else if (k === 'requestexample') target.requestExample = value
   else if (k === 'responseexample') target.responseExample = value
+  else if (k === 'payload' || k === 'payloadtemplate') target.payload = value
   else if (k === 'valueformat') target.valueFormat = value
   else if (k === 'validwhen') target.validWhen = value
   else target[k] = value

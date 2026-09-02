@@ -16,16 +16,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useAppStore } from '../store/appStore'
+import { useI18n } from '../composables/useI18n'
 
 const props = defineProps<{ currentPath: string }>()
 const appStore = useAppStore()
+const { t } = useI18n()
 
 const tabs = computed(() => {
-  const isZh = appStore.locale === 'zh'
+  void appStore.locale
   return [
-    { path: '/pages/scan/index',   icon: '/static/scanning_white.png', label: isZh ? '扫描' : 'Scan'   },
-    { path: '/pages/device/index', icon: '/static/device_white.png',   label: isZh ? '设备' : 'Device' },
-    { path: '/pages/debug/index',  icon: '/static/debugging_white.png', label: isZh ? '调试' : 'Debug'  },
+    { path: '/pages/scan/index',   icon: '/static/scanning_white.png', label: t('nav.scan')   },
+    { path: '/pages/device/index', icon: '/static/device_white.png',   label: t('nav.device') },
+    { path: '/pages/debug/index',  icon: '/static/debugging_white.png', label: t('nav.debug')  },
   ]
 })
 

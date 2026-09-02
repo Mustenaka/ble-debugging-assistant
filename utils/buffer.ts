@@ -743,3 +743,48 @@ export function removeDevicePin(deviceId: string): void {
 export function getDevicePin(deviceId: string): DevicePinConfig | null {
   return loadDevicePins()[deviceId] ?? null
 }
+
+// ─── 系统分享 ────────────────────────────────────────────────────────────────
+
+/**
+ * 通过系统分享面板分享本地文件（Android: Intent + FileProvider；iOS: plus.share）
+ * 返回是否成功唤起分享；H5 下始终返回 false（文件已由浏览器下载）
+ */
+export function shareFileWithSystem(path: string, mimeType: string, title: string): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    // #ifdef APP-PLUS
+    if (!path) { resolve(false); return }
+    if (plus.os.name === 'Android') {
+      try {
+        const Intent = plus.android.importClass('android.content.Intent') as any
+        const File = plus.android.importClass('java.io.File') as any
+        const BuildVersion = plus.android.importClass('android.os.Build$VERSION') as any
+        const activity = plus.android.runtimeMainActivity() as any
+        const intent = new Intent(Intent.ACTION_SEND)
+        intent.setType(mimeType)
+        const file = new File(path)
+        if (BuildVersion.SDK_INT >= 24) {
+          const FileProvider = plus.android.importClass('androidx.core.content.FileProvider') as any
+          const authority = activity.getPackageName() + '.dc.fileprovider'
+          const uri = FileProvider.getUriForFile(activity, authority, file)
+          intent.putExtra(Intent.EXTRA_STREAM, uri)
+          intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } else {
+          const Uri = plus.android.importClass('android.net.Uri') as any
+          intent.putExtra(Intent.EXTRA_STREAM, Uri.fromFile(file))
+        }
+        activity.startActivity(Intent.createChooser(intent, title))
+        resolve(true)
+      } catch {
+        resolve(false)
+      }
+      return
+    }
+    plus.share.sendWithSystem({ type: 'file', href: path } as any, () => resolve(true), () => resolve(false))
+    return
+    // #endif
+    // #ifndef APP-PLUS
+    resolve(false)
+    // #endif
+  })
+}

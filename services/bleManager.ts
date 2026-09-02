@@ -8,6 +8,8 @@
  *   两层完全独立——扫描与多设备连接可同时进行。
  */
 
+import { mockBle, isMockDeviceId, isMockModeEnabled, buildAllMockSpecs } from './mockBle'
+
 // ─── 类型定义 ────────────────────────────────────────────────────────────────
 
 export enum BleAdapterState {
@@ -131,6 +133,39 @@ class BleManager {
   private dataListeners: Set<BleDataListener> = new Set()
   private connectionListeners: Set<BleConnectionListener> = new Set()
 
+  // Mock（无硬件）模式：真实适配器不可用时也能"扫描"到虚拟设备
+  private virtualScan = false
+
+  constructor() {
+    mockBle.dataListener = (deviceId, serviceId, characteristicId, value) => {
+      this.dataListeners.forEach((fn) => fn(deviceId, serviceId, characteristicId, value))
+    }
+    mockBle.connectionListener = (deviceId, connected) => {
+      this.connectionListeners.forEach((fn) => fn(deviceId, connected))
+      if (!connected) this.clearDeviceState(deviceId)
+    }
+  }
+
+  /** 重建 Mock 设备列表（演示设备 + 可生成 Mock 的集合），并合并进扫描结果 */
+  refreshMockDevices(): void {
+    if (!isMockModeEnabled()) {
+      mockBle.setSpecs([])
+      for (const [id] of [...this.discoveredDevices]) {
+        if (isMockDeviceId(id) && !this.isDeviceConnected(id)) this.discoveredDevices.delete(id)
+      }
+      this.deviceListeners.forEach((fn) => fn(this.getDiscoveredDevices()))
+      return
+    }
+    mockBle.setSpecs(buildAllMockSpecs())
+    for (const d of mockBle.listDevices()) this.discoveredDevices.set(d.deviceId, d)
+    this.deviceListeners.forEach((fn) => fn(this.getDiscoveredDevices()))
+  }
+
+  getMockDevice(deviceId: string): BleDevice | null {
+    if (!mockBle.has(deviceId)) mockBle.setSpecs(buildAllMockSpecs())
+    return mockBle.deviceFor(deviceId)
+  }
+
   // ── 适配器状态机 ──────────────────────────────────────────────────────────
 
   getAdapterState(): BleAdapterState {
@@ -249,11 +284,19 @@ class BleManager {
     timeoutMs?: number
   }): Promise<void> {
     console.log('[BleManager] startScan() called, adapterState:', this.adapterState)
-    if (this.adapterState === BleAdapterState.UNINITIALIZED) {
-      await this.openAdapter()
-    }
     if (this.adapterState === BleAdapterState.SCANNING) {
       await this.stopScan()
+    }
+    const mockOn = isMockModeEnabled()
+    if (this.adapterState === BleAdapterState.UNINITIALIZED) {
+      try {
+        await this.openAdapter()
+      } catch (e) {
+        // 无真实蓝牙（H5 / 权限未开）时，Mock 模式仍可进行"虚拟扫描"
+        if (!mockOn) throw e
+        this.startVirtualScan(options?.timeoutMs)
+        return
+      }
     }
 
     // 保留已连接设备条目，只清除未连接设备的缓存
@@ -261,6 +304,7 @@ class BleManager {
     for (const [id] of [...this.discoveredDevices]) {
       if (!connectedIds.has(id)) this.discoveredDevices.delete(id)
     }
+    if (mockOn) this.refreshMockDevices()
 
     // 保存本次扫描参数，供连接后重启扫描使用
     this.lastScanApiOptions = {
@@ -287,16 +331,33 @@ class BleManager {
         },
         fail: (err: any) => {
           console.error('[BleManager] startBluetoothDevicesDiscovery FAIL:', JSON.stringify(err))
+          if (mockOn) {
+            this.startVirtualScan(options?.timeoutMs)
+            resolve()
+            return
+          }
           reject(createBleError(err.errCode ?? err.code ?? 10000, err))
         },
       })
     })
   }
 
+  private startVirtualScan(timeoutMs?: number) {
+    this.virtualScan = true
+    this.setAdapterState(BleAdapterState.SCANNING)
+    this.refreshMockDevices()
+    if (timeoutMs) this.scanTimer = setTimeout(() => this.stopScan(), timeoutMs)
+  }
+
   async stopScan(): Promise<void> {
     if (this.scanTimer) {
       clearTimeout(this.scanTimer)
       this.scanTimer = null
+    }
+    if (this.virtualScan) {
+      this.virtualScan = false
+      if (this.adapterState === BleAdapterState.SCANNING) this.setAdapterState(BleAdapterState.IDLE)
+      return
     }
     return new Promise((resolve) => {
       uni.stopBluetoothDevicesDiscovery({
@@ -320,6 +381,18 @@ class BleManager {
   async connect(deviceId: string, timeout = 10000): Promise<void> {
     // 多设备：连接不停止扫描
     this.setDeviceState(deviceId, BleDeviceState.CONNECTING)
+
+    if (isMockDeviceId(deviceId)) {
+      if (!mockBle.has(deviceId)) mockBle.setSpecs(buildAllMockSpecs())
+      try {
+        await mockBle.connect(deviceId)
+        this.setDeviceState(deviceId, BleDeviceState.CONNECTED)
+      } catch (err: any) {
+        this.deviceStates.delete(deviceId)
+        throw createBleError(err?.code ?? 10003, err)
+      }
+      return
+    }
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -368,6 +441,13 @@ class BleManager {
     const cfg = this.reconnectConfigs.get(deviceId)
     if (cfg) cfg.enabled = false
 
+    if (isMockDeviceId(deviceId)) {
+      await mockBle.disconnect(deviceId)
+      this.setDeviceState(deviceId, BleDeviceState.DISCONNECTED)
+      this.clearDeviceState(deviceId)
+      return
+    }
+
     return new Promise((resolve, reject) => {
       uni.closeBLEConnection({
         deviceId,
@@ -393,6 +473,7 @@ class BleManager {
   // ── 服务 & 特征值发现 ─────────────────────────────────────────────────────
 
   async getServices(deviceId: string): Promise<BleService[]> {
+    if (isMockDeviceId(deviceId)) return mockBle.getServices(deviceId)
     return new Promise((resolve, reject) => {
       uni.getBLEDeviceServices({
         deviceId,
@@ -403,6 +484,7 @@ class BleManager {
   }
 
   async getCharacteristics(deviceId: string, serviceId: string): Promise<BleCharacteristic[]> {
+    if (isMockDeviceId(deviceId)) return mockBle.getCharacteristics(deviceId, serviceId)
     return new Promise((resolve, reject) => {
       uni.getBLEDeviceCharacteristics({
         deviceId,
@@ -434,6 +516,7 @@ class BleManager {
     characteristicId: string,
     enable: boolean
   ): Promise<void> {
+    if (isMockDeviceId(deviceId)) return mockBle.setNotify(deviceId, serviceId, characteristicId, enable)
     return new Promise((resolve, reject) => {
       uni.notifyBLECharacteristicValueChange({
         deviceId, serviceId, characteristicId,
@@ -451,6 +534,7 @@ class BleManager {
     serviceId: string,
     characteristicId: string
   ): Promise<ArrayBuffer> {
+    if (isMockDeviceId(deviceId)) return mockBle.read(deviceId, serviceId, characteristicId)
     return new Promise((resolve, reject) => {
       const handler = (res: any) => {
         if (
@@ -483,6 +567,7 @@ class BleManager {
     value: ArrayBuffer,
     withResponse = true
   ): Promise<void> {
+    if (isMockDeviceId(deviceId)) return mockBle.write(deviceId, serviceId, characteristicId, value)
     return new Promise((resolve, reject) => {
       uni.writeBLECharacteristicValue({
         deviceId, serviceId, characteristicId, value,
@@ -496,6 +581,7 @@ class BleManager {
   // ── 查询设备 RSSI ─────────────────────────────────────────────────────────
 
   async getRSSI(deviceId: string): Promise<number> {
+    if (isMockDeviceId(deviceId)) return mockBle.getRSSI(deviceId)
     return new Promise((resolve, reject) => {
       uni.getBLEDeviceRSSI({
         deviceId,
@@ -509,6 +595,7 @@ class BleManager {
 
   async negotiateMTU(deviceId: string, mtu: number): Promise<number> {
     if (!this.isDeviceConnected(deviceId)) throw createBleError(10006)
+    if (isMockDeviceId(deviceId)) return mockBle.negotiateMTU(deviceId, mtu)
     return new Promise((resolve, reject) => {
       // #ifdef APP-PLUS
       uni.setBLEMTU({

@@ -13,7 +13,7 @@
     {
       "path": "pages/device/index",
       "style": {
-        "navigationBarTitleText": "设备服务",
+        "navigationBarTitleText": "工作台",
         "navigationBarBackgroundColor": "#0A0F1C",
         "navigationBarTextStyle": "white",
         "backgroundColor": "#0A0F1C",
@@ -23,7 +23,7 @@
     {
       "path": "pages/debug/index",
       "style": {
-        "navigationBarTitleText": "BLE 通信调试",
+        "navigationBarTitleText": "BLE 控制台",
         "navigationBarBackgroundColor": "#0A0F1C",
         "navigationBarTextStyle": "white",
         "backgroundColor": "#0A0F1C",
@@ -33,7 +33,17 @@
     {
       "path": "pages/protocol/index",
       "style": {
-        "navigationBarTitleText": "协议插件",
+        "navigationBarTitleText": "集合与插件",
+        "navigationBarBackgroundColor": "#0A0F1C",
+        "navigationBarTextStyle": "white",
+        "backgroundColor": "#0A0F1C",
+        "enablePullDownRefresh": false
+      }
+    },
+    {
+      "path": "pages/collection/index",
+      "style": {
+        "navigationBarTitleText": "集合详情",
         "navigationBarBackgroundColor": "#0A0F1C",
         "navigationBarTextStyle": "white",
         "backgroundColor": "#0A0F1C",
@@ -71,13 +81,13 @@
       },
       {
         "pagePath": "pages/device/index",
-        "text": "设备",
+        "text": "工作台",
         "iconPath": "static/device_white.png",
         "selectedIconPath": "static/device_white.png"
       },
       {
         "pagePath": "pages/debug/index",
-        "text": "调试",
+        "text": "控制台",
         "iconPath": "static/debugging_white.png",
         "selectedIconPath": "static/debugging_white.png"
       }

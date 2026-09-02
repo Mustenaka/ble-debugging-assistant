@@ -1,6 +1,6 @@
 {
   "name": "uniapp-ble-debugging-assistant",
-  "version": "1.0.0",
+  "version": "0.2.0",
   "description": "Professional BLE Debugging Assistant built with UniApp",
   "scripts": {
     "dev:app": "uni -p app",

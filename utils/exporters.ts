@@ -38,6 +38,8 @@ import {
   type SessionMeta,
   type OperationRunRecord,
 } from './deviceArchive'
+import { serializeCollection, type BleCollection } from './collection'
+import { buildMockSpecFromCollection } from '../services/mockBle'
 
 export interface DebugPackExportOptions {
   purpose: DebugPackPurpose
@@ -60,6 +62,8 @@ export interface ExportContext {
   sessionMeta: SessionMeta | null
   /** 命令执行记录（runKey → 最近执行列表），进 SESSION_LOG.md */
   operationRuns?: Record<string, OperationRunRecord[]>
+  /** 设备匹配到的集合（导出 collection.json，AI 可回写后再导入） */
+  collection?: BleCollection | null
   options: DebugPackExportOptions
 }
 
@@ -119,8 +123,9 @@ function interfaceMd(api: ProtocolInterfaceDoc): string[] {
   lines.push('**Request**')
   lines.push('')
   if (api.request) lines.push(`- Frame: \`${api.request}\``)
+  if (api.payload) lines.push(`- Payload Template: \`${api.payload}\``)
   if (api.requestExample) lines.push(`- Example: \`${api.requestExample}\``)
-  if (!api.request && !api.requestExample && !api.requestFields.length) lines.push('- (none)')
+  if (!api.request && !api.requestExample && !api.payload && !api.requestFields.length) lines.push('- (none)')
   lines.push('')
   lines.push(...fieldTableMd(api.requestFields))
   lines.push('')
@@ -171,6 +176,16 @@ export function buildProtocolMarkdown(ctx: ExportContext): string {
 
   if (ctx.options.notes.trim()) {
     lines.push('## Notes', '', `> ${ctx.options.notes.trim().replace(/\n/g, '\n> ')}`, '')
+  }
+
+  if (ctx.collection?.variables?.length) {
+    lines.push('## Variables', '')
+    lines.push('Payload templates may reference these with `{{name}}` (hex bytes) or `{{name:u16le}}` (typed).', '')
+    lines.push('| Name | Value | Description |', '|:-----|:------|:------------|')
+    for (const v of ctx.collection.variables) {
+      lines.push(`| ${v.name} | \`${v.value}\` | ${v.description ?? ''} |`)
+    }
+    lines.push('')
   }
 
   lines.push('## Services & Endpoints', '')
@@ -254,9 +269,10 @@ export function buildProtocolJson(ctx: ExportContext): string {
     }
   })
 
+  const col = ctx.collection
   return JSON.stringify({
     kind: 'ble-protocol-spec',
-    version: '0.2.0',
+    version: '0.3.0',
     generatedAt: new Date().toISOString(),
     device: {
       name: ctx.device.name,
@@ -264,8 +280,18 @@ export function buildProtocolJson(ctx: ExportContext): string {
       mtu: ctx.device.mtu ?? null,
       rssi: ctx.device.rssi ?? null,
     },
+    collection: col
+      ? {
+          id: col.id,
+          name: col.name,
+          description: col.description ?? null,
+          fingerprint: col.fingerprint,
+          variables: col.variables ?? [],
+        }
+      : null,
     services,
     savedSamples: ctx.samples,
+    examples: col?.examples ?? [],
     notes: ctx.options.notes.trim() || null,
   }, null, 2)
 }
@@ -454,10 +480,22 @@ export function buildAiPromptMarkdown(ctx: ExportContext): string {
   if (!endpointCount) lines.push('- No characteristics loaded.')
   lines.push('')
 
+  if (ctx.collection?.variables?.length) {
+    lines.push('# Variables', '')
+    for (const v of ctx.collection.variables) lines.push(`- \`${v.name}\` = \`${v.value}\`${v.description ? ` — ${v.description}` : ''}`)
+    lines.push('')
+  }
+
   lines.push('# Saved Examples', '')
-  if (!ctx.samples.length) {
+  const paired = ctx.collection?.examples ?? []
+  if (!ctx.samples.length && !paired.length) {
     lines.push('- (none)')
   } else {
+    for (const ex of paired) {
+      const req = ex.request?.hex ? `TX \`${ex.request.hex}\`` : ''
+      const rsp = ex.response?.hex ? `RX \`${ex.response.hex}\`${ex.response.rttMs != null ? ` (${ex.response.rttMs}ms)` : ''}` : ''
+      lines.push(`- ${ex.name} \`${shortUUID(ex.serviceUUID)}/${shortUUID(ex.characteristicUUID)}\`: ${[req, rsp].filter(Boolean).join(' → ')}${ex.note ? ` — ${ex.note}` : ''}`)
+    }
     for (const s of ctx.samples) {
       lines.push(`- ${s.name} [${s.direction}] \`${shortUUID(s.serviceUUID)}/${shortUUID(s.characteristicUUID)}\`: \`${s.hex}\``)
     }
@@ -485,6 +523,11 @@ export function buildAiPromptMarkdown(ctx: ExportContext): string {
     '- `PROTOCOL.md` / `protocol.json` — full endpoint documentation including user-annotated field tables.',
     '- `SESSION_LOG.md` / `logs.csv` — the complete session transfer record and statistics.',
     '- `mock.json` — mock seed for hardware-free reproduction.',
+  )
+  if (ctx.collection) {
+    lines.push('- `collection.json` — the app\'s native Collection file (services, characteristics, runnable operations, variables, examples). It can be imported back into the app.')
+  }
+  lines.push(
     '',
     '# Output Expectations',
     '',
@@ -492,6 +535,11 @@ export function buildAiPromptMarkdown(ctx: ExportContext): string {
     '- Point out timing anomalies, unanswered requests, and suspicious frames in the timeline.',
     '- Propose additions to the protocol documentation (names, field tables, mock rules) in the same structure as PROTOCOL.md.',
   )
+  if (ctx.collection) {
+    lines.push(
+      '- Preferably return an updated `collection.json` in the same schema (`kind: "ble-collection"`, `schema: 1`): fill in `name`, `direction`, `valueFormat`, `operations[]` with `payload`, `requestFields` / `responseFields` (`offset`, `length`, `type` such as u8 / u16le / i16be / f32le / ascii / bytes, `name`, `meaning`), `expect.matchHex`, and `variables`. Payloads may use template tokens: `{{len}}`, `{{len:-2}}`, `{{seq}}`, `{{sum}}`, `{{xor}}`, `{{crc8}}`, `{{crc16}}`, `{{variableName}}`, `{{variableName:u16le}}`.',
+    )
+  }
   return lines.join('\n')
 }
 
@@ -542,7 +590,17 @@ export function buildMockJson(ctx: ExportContext): string {
     logs: ctx.logs,
     samples: ctx.samples,
   })
-  return JSON.stringify(pack, null, 2)
+  // 集合的变量 / 配对样例 / 可执行 Mock 规则（与 App 内 Mock 设备一致）
+  const col = ctx.collection
+  const mockDevice = col ? buildMockSpecFromCollection(col) : null
+  return JSON.stringify({
+    ...pack,
+    variables: col?.variables ?? [],
+    examples: col?.examples ?? [],
+    mockDevice: mockDevice
+      ? { name: mockDevice.name, services: mockDevice.services, rules: mockDevice.rules, periodic: mockDevice.periodic, readValues: mockDevice.readValues }
+      : null,
+  }, null, 2)
 }
 
 // ── README.md + 打包 ────────────────────────────────────────────────────────
@@ -574,6 +632,10 @@ export function buildDebugPackFiles(ctx: ExportContext): DebugPackFile[] {
     files.push({ name: 'protocol.json', content: buildProtocolJson(ctx) })
     readme.push('- `PROTOCOL.md` — human-readable endpoint documentation with field tables')
     readme.push('- `protocol.json` — machine-readable protocol spec')
+    if (ctx.collection) {
+      files.push({ name: 'collection.json', content: serializeCollection(ctx.collection) })
+      readme.push('- `collection.json` — importable Collection (operations, variables, examples); share it or let an AI fill it in and import it back')
+    }
   }
   if (opts.includeSessionLog) {
     files.push({ name: 'SESSION_LOG.md', content: buildSessionLogMarkdown(ctx) })

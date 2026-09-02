@@ -8,6 +8,9 @@
         <view class="mode-tab" :class="{ active: mode === 'ascii' }" @click="setMode('ascii')"><text>ASCII</text></view>
       </view>
       <view class="toolbar-actions">
+        <view v-if="templateRenderer" class="tool-btn" :class="{ 'tool-btn--tpl': isTemplate }" @click="pickToken">
+          <text class="tool-icon tool-icon--tpl">ƒ</text>
+        </view>
         <view class="tool-btn" @click="clearInput">
           <text class="tool-icon">✕</text>
         </view>
@@ -76,6 +79,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { hexToBuf, asciiToBuf, isValidHex, bufToHex, bufToAscii, normalizeHex } from '../utils/hex'
+import { hasTemplateTokens, BUILTIN_TOKENS } from '../utils/payload'
 import type { QuickCommand } from '../utils/buffer'
 
 const props = defineProps<{
@@ -93,10 +97,14 @@ const props = defineProps<{
   sendingLabel?: string
   /** 外部注入内容（命令面板"填入"），ts 变化时生效 */
   injectData?: { data: string; mode: 'hex' | 'ascii'; label?: string; ts: number } | null
+  /** 模板渲染器（含 {{len}} {{sum}} {{变量}} 时用于预览与校验） */
+  templateRenderer?: (text: string, mode: 'hex' | 'ascii') => { hex: string; error?: string }
+  /** 可插入的变量名 */
+  variableNames?: string[]
 }>()
 
 const emit = defineEmits<{
-  send: [buffer: ArrayBuffer, label?: string]
+  send: [buffer: ArrayBuffer, label?: string, template?: { text: string; mode: 'hex' | 'ascii' }]
   'save-quick': [payload: { data: string; mode: 'hex' | 'ascii' }]
   'delete-quick': [id: string]
 }>()
@@ -108,13 +116,30 @@ const activeQuickCommandName = ref('')
 
 const modePlaceholder = computed(() => mode.value === 'hex' ? (props.hexPlaceholder ?? 'Enter HEX data') : (props.asciiPlaceholder ?? 'Enter ASCII string'))
 
+const isTemplate = computed(() => hasTemplateTokens(inputValue.value))
+
+const rendered = computed<{ hex: string; error?: string } | null>(() => {
+  if (!isTemplate.value || !props.templateRenderer) return null
+  try { return props.templateRenderer(inputValue.value, mode.value) } catch (e: any) { return { hex: '', error: e?.message ?? 'render failed' } }
+})
+
 const parsedBuffer = computed<ArrayBuffer | null>(() => {
   const val = inputValue.value.trim()
   if (!val) return null
+  if (isTemplate.value) {
+    const r = rendered.value
+    if (!r || r.error || !r.hex) return null
+    try { return hexToBuf(r.hex) } catch { return null }
+  }
   try { return mode.value === 'hex' ? hexToBuf(val) : asciiToBuf(val) } catch { return null }
 })
 
 const previewText = computed(() => {
+  if (isTemplate.value) {
+    const r = rendered.value
+    if (!r) return ''
+    return r.error ? `✗ ${r.error}` : r.hex
+  }
   const buf = parsedBuffer.value
   if (!buf) return ''
   return mode.value === 'hex' ? bufToAscii(buf) : bufToHex(buf)
@@ -126,32 +151,61 @@ const canSend = computed(() => {
   if (props.disabled) return false
   const val = inputValue.value.trim()
   if (!val) return false
+  if (isTemplate.value) return !!parsedBuffer.value
   if (mode.value === 'hex' && !isValidHex(val)) return false
   return true
 })
 
 function setMode(m: 'hex' | 'ascii') {
   if (m === mode.value) return
+  if (isTemplate.value) { mode.value = m; validateInput(inputValue.value); return }
   const buf = parsedBuffer.value
   inputValue.value = buf ? (m === 'hex' ? bufToHex(buf) : bufToAscii(buf)) : ''
   mode.value = m; validationError.value = ''
 }
 
+/** HEX 模式过滤非法字符，但保留 {{...}} 占位符（含未闭合的尾部） */
+function sanitizeHexKeepingTokens(val: string): string {
+  return val.replace(/\{\{[^}]*\}\}|\{\{[^}]*$|[^{}]+/g, (seg) => {
+    if (seg.startsWith('{{')) return seg
+    return seg.toUpperCase().replace(/[^0-9A-F\s]/g, '')
+  })
+}
+
 function onInput(e: any) {
   let val = e.detail.value as string
-  if (mode.value === 'hex') val = val.toUpperCase().replace(/[^0-9A-F\s]/g, '')
+  if (mode.value === 'hex') val = sanitizeHexKeepingTokens(val)
   inputValue.value = val; activeQuickCommandName.value = ''; validateInput(val)
 }
 
 function onBlur() {
-  if (mode.value === 'hex' && inputValue.value.trim()) inputValue.value = normalizeHex(inputValue.value)
+  if (mode.value === 'hex' && inputValue.value.trim() && !isTemplate.value) inputValue.value = normalizeHex(inputValue.value)
 }
 
 function validateInput(val: string) {
   if (!val.trim()) { validationError.value = ''; return }
+  if (hasTemplateTokens(val)) {
+    const r = props.templateRenderer ? props.templateRenderer(val, mode.value) : { hex: '', error: 'template not supported' }
+    validationError.value = r.error ?? ''
+    return
+  }
   if (mode.value === 'hex' && !isValidHex(val)) {
     validationError.value = props.hexError ?? 'Invalid HEX format'
   } else { validationError.value = '' }
+}
+
+function pickToken() {
+  const items = [...BUILTIN_TOKENS.map((b) => b.token), ...(props.variableNames ?? []).map((n) => `{{${n}}}`)]
+  uni.showActionSheet({
+    itemList: items.slice(0, 6 + (props.variableNames?.length ?? 0)),
+    success: (res) => {
+      const tok = items[res.tapIndex]
+      if (!tok) return
+      const cur = inputValue.value.replace(/\s+$/, '')
+      inputValue.value = cur ? `${cur} ${tok}` : tok
+      validateInput(inputValue.value)
+    },
+  })
 }
 
 function clearInput() { inputValue.value = ''; validationError.value = ''; activeQuickCommandName.value = '' }
@@ -196,7 +250,7 @@ async function onSend() {
   if (!canSend.value || props.isSending) return
   const buf = parsedBuffer.value
   if (!buf) return
-  emit('send', buf, activeQuickCommandName.value || undefined)
+  emit('send', buf, activeQuickCommandName.value || undefined, isTemplate.value ? { text: inputValue.value, mode: mode.value } : undefined)
 }
 </script>
 
@@ -214,6 +268,8 @@ async function onSend() {
 .toolbar-actions { display: flex; gap: 6px; }
 .tool-btn { width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 6px; &:active { opacity: 0.7; } }
 .tool-icon { font-size: 14px; color: var(--text-secondary); }
+.tool-btn--tpl { border-color: rgba(var(--color-accent-rgb), 0.4); background: rgba(var(--color-accent-rgb), 0.08); }
+.tool-icon--tpl { font-style: italic; font-weight: 700; color: var(--color-accent); }
 
 /* 输入框 */
 .input-area {

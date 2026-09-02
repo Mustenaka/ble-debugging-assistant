@@ -79,11 +79,29 @@
               :placeholder="(form.payloadMode ?? 'hex') === 'hex' ? t('hexInput.hexPlaceholder') : t('hexInput.asciiPlaceholder')"
               placeholder-class="oe-ph" maxlength="500" :adjust-position="true" cursor-spacing="24"
               @input="form.payload = $event.detail.value" />
-            <scroll-view v-if="txSamples.length" scroll-x class="oe-sample-row">
+            <!-- 模板渲染预览 -->
+            <view v-if="payloadPreview" class="oe-tpl-preview" :class="{ 'oe-tpl-preview--error': !!payloadPreview.error }">
+              <text class="oe-tpl-label">{{ payloadPreview.error ? t('command.templateError') : t('command.templatePreview') }}</text>
+              <text class="oe-tpl-value mono">{{ payloadPreview.error || payloadPreview.hex }}</text>
+            </view>
+            <!-- 占位符 chips -->
+            <scroll-view scroll-x class="oe-sample-row">
+              <view class="oe-sample-chips">
+                <text class="oe-sample-title">{{ t('command.tokens') }}:</text>
+                <view v-for="tk in tokenChips" :key="tk" class="oe-token-chip" @click="insertToken(tk)">
+                  <text class="oe-token-chip-text mono">{{ tk }}</text>
+                </view>
+              </view>
+            </scroll-view>
+            <text class="oe-sub-hint">{{ t('command.templateHint') }}</text>
+            <scroll-view v-if="txSamples.length || txExamples.length" scroll-x class="oe-sample-row">
               <view class="oe-sample-chips">
                 <text class="oe-sample-title">{{ t('annotation.fromSample') }}:</text>
                 <view v-for="s in txSamples" :key="s.id" class="oe-sample-chip" @click="form.payload = s.hex; form.payloadMode = 'hex'">
                   <text class="oe-sample-chip-text">{{ s.name }}</text>
+                </view>
+                <view v-for="e in txExamples" :key="e.id" class="oe-sample-chip oe-sample-chip--ex" @click="form.payload = e.request!.hex; form.payloadMode = 'hex'">
+                  <text class="oe-sample-chip-text">⇄ {{ e.name }}</text>
                 </view>
               </view>
             </scroll-view>
@@ -142,26 +160,50 @@
                 </view>
               </view>
 
-              <!-- 字段断言（P3） -->
+              <!-- 字段断言：偏移字节 / 按字段表解码比较 -->
               <view class="oe-field">
                 <view class="oe-label-row">
                   <view class="oe-label-col">
                     <text class="oe-label">{{ t('command.assertions') }}</text>
-                    <text class="oe-sub-hint">{{ t('command.assertionHint') }}</text>
+                    <text class="oe-sub-hint">{{ t('command.fieldAssertionHint') }}</text>
                   </view>
-                  <view class="oe-add-btn" @click="addAssertion"><text class="oe-add-text">＋ {{ t('command.addAssertion') }}</text></view>
+                  <view class="oe-add-group">
+                    <view class="oe-add-btn" @click="addAssertion"><text class="oe-add-text">＋ {{ t('command.addOffsetAssertion') }}</text></view>
+                    <view class="oe-add-btn" @click="addFieldAssertion"><text class="oe-add-text">＋ {{ t('command.addFieldAssertion') }}</text></view>
+                  </view>
                 </view>
                 <view v-for="(a, i) in assertions" :key="i" class="oe-kv-row">
-                  <view class="oe-kv-cell oe-kv-cell--sm">
-                    <text class="oe-kv-label">{{ t('command.assertionOffset') }}</text>
-                    <input class="oe-kv-input mono" type="number" :value="String(a.offset)" placeholder="0" placeholder-class="oe-ph"
-                      @input="a.offset = parseInt($event.detail.value) || 0" />
-                  </view>
-                  <view class="oe-kv-cell">
-                    <text class="oe-kv-label">{{ t('command.assertionValue') }}</text>
-                    <input class="oe-kv-input mono" :value="a.hexValue" placeholder="01" placeholder-class="oe-ph"
-                      @input="a.hexValue = $event.detail.value" />
-                  </view>
+                  <template v-if="a.field !== undefined">
+                    <view class="oe-kv-cell">
+                      <text class="oe-kv-label">{{ t('command.assertionField') }}</text>
+                      <picker :range="responseFieldNames" @change="a.field = responseFieldNames[$event.detail.value] ?? a.field">
+                        <view class="oe-kv-input oe-kv-picker"><text class="oe-kv-picker-text mono">{{ a.field || '—' }}</text><text class="oe-kv-picker-arrow">▾</text></view>
+                      </picker>
+                    </view>
+                    <view class="oe-kv-cell oe-kv-cell--xs">
+                      <text class="oe-kv-label">{{ t('command.assertionOp') }}</text>
+                      <picker :range="assertionOpLabels" @change="a.op = assertionOps[$event.detail.value].value">
+                        <view class="oe-kv-input oe-kv-picker"><text class="oe-kv-picker-text mono">{{ opLabel(a.op) }}</text></view>
+                      </picker>
+                    </view>
+                    <view class="oe-kv-cell">
+                      <text class="oe-kv-label">{{ t('command.assertionExpected') }}</text>
+                      <input class="oe-kv-input mono" :value="a.value ?? ''" placeholder="1 / 0x01 / 1,2 / 1..5" placeholder-class="oe-ph"
+                        @input="a.value = $event.detail.value" />
+                    </view>
+                  </template>
+                  <template v-else>
+                    <view class="oe-kv-cell oe-kv-cell--sm">
+                      <text class="oe-kv-label">{{ t('command.assertionOffset') }}</text>
+                      <input class="oe-kv-input mono" type="number" :value="String(a.offset ?? 0)" placeholder="0" placeholder-class="oe-ph"
+                        @input="a.offset = parseInt($event.detail.value) || 0" />
+                    </view>
+                    <view class="oe-kv-cell">
+                      <text class="oe-kv-label">{{ t('command.assertionValue') }}</text>
+                      <input class="oe-kv-input mono" :value="a.hexValue ?? ''" placeholder="01" placeholder-class="oe-ph"
+                        @input="a.hexValue = $event.detail.value" />
+                    </view>
+                  </template>
                   <view class="oe-kv-del" @click="assertions.splice(i, 1)"><text class="oe-kv-del-icon">✕</text></view>
                 </view>
               </view>
@@ -214,11 +256,14 @@
                 <text class="oe-label">{{ t('annotation.responseSection') }} · {{ t('annotation.example') }}</text>
                 <input class="oe-input mono" :value="form.responseExample" :placeholder="t('annotation.examplePlaceholder')" placeholder-class="oe-ph"
                   @input="form.responseExample = $event.detail.value" />
-                <scroll-view v-if="rxSamples.length" scroll-x class="oe-sample-row">
+                <scroll-view v-if="rxSamples.length || rxExamples.length" scroll-x class="oe-sample-row">
                   <view class="oe-sample-chips">
                     <text class="oe-sample-title">{{ t('annotation.fromSample') }}:</text>
                     <view v-for="s in rxSamples" :key="s.id" class="oe-sample-chip" @click="form.responseExample = s.hex">
                       <text class="oe-sample-chip-text">{{ s.name }}</text>
+                    </view>
+                    <view v-for="e in rxExamples" :key="e.id" class="oe-sample-chip oe-sample-chip--ex" @click="form.responseExample = e.response!.hex">
+                      <text class="oe-sample-chip-text">⇄ {{ e.name }}</text>
                     </view>
                   </view>
                 </scroll-view>
@@ -245,9 +290,12 @@
 <script setup lang="ts">
 import { ref, reactive, computed, watch } from 'vue'
 import { useBleStore } from '../store/bleStore'
+import { useCollectionStore } from '../store/collectionStore'
 import { useI18n } from '../composables/useI18n'
 import { useResponsive } from '../composables/useResponsive'
 import { shortUUID, normalizeUUID, isValidHex, normalizeHex } from '../utils/hex'
+import { hasTemplateTokens, BUILTIN_TOKENS } from '../utils/payload'
+import { ASSERTION_OPS } from '../utils/fields'
 import type { BleProtocolSample } from '../utils/buffer'
 import type { ProtocolFieldDoc } from '../utils/protocolDocs'
 import {
@@ -257,6 +305,7 @@ import {
   type OperationExpect,
   type OperationVariant,
   type DeviceAnnotations,
+  type FieldAssertion,
 } from '../utils/deviceArchive'
 import FieldTable from './FieldTable.vue'
 
@@ -281,14 +330,54 @@ const emit = defineEmits<{
 }>()
 
 const bleStore = useBleStore()
+const collectionStore = useCollectionStore()
+collectionStore.init()
 const { t } = useI18n()
 const { isWideScreen } = useResponsive()
 
 const isNew = computed(() => !props.initial)
 
+// ── 模板 / 占位符 ───────────────────────────────────────────────────────────
+
+const payloadPreview = computed(() => {
+  const text = form.payload ?? ''
+  if (!hasTemplateTokens(text)) return null
+  return bleStore.previewPayloadFor(text, form.payloadMode ?? 'hex', props.deviceId)
+})
+
+const tokenChips = computed(() => {
+  void collectionStore.version
+  const vars = Object.keys(collectionStore.variablesFor(props.deviceId)).map((n) => `{{${n}}}`)
+  return [...BUILTIN_TOKENS.map((b) => b.token), ...vars]
+})
+
+function insertToken(tok: string) {
+  const cur = (form.payload ?? '').replace(/\s+$/, '')
+  form.payload = cur ? `${cur} ${tok}` : tok
+}
+
+// ── 断言 ────────────────────────────────────────────────────────────────────
+
+const assertionOps = ASSERTION_OPS
+const assertionOpLabels = ASSERTION_OPS.map((o) => o.label)
+const responseFieldNames = computed(() => responseFields.value.map((f) => f.name).filter(Boolean))
+
+function opLabel(op?: string): string {
+  return ASSERTION_OPS.find((o) => o.value === (op ?? 'eq'))?.label ?? '=='
+}
+
+function addFieldAssertion() {
+  if (!responseFieldNames.value.length) {
+    uni.showToast({ title: t('command.noResponseFields'), icon: 'none', duration: 2200 })
+    showDocFields.value = true
+    return
+  }
+  assertions.value.push({ field: responseFieldNames.value[0], op: 'eq', value: '' })
+}
+
 const form = reactive<OperationAnnotation>(emptyOp())
 const expect = reactive<OperationExpect>(defaultOperationExpect())
-const assertions = ref<{ offset: number; hexValue: string }[]>([])
+const assertions = ref<FieldAssertion[]>([])
 const variants = ref<OperationVariant[]>([])
 const requestFields = ref<ProtocolFieldDoc[]>([])
 const responseFields = ref<ProtocolFieldDoc[]>([])
@@ -370,8 +459,38 @@ const charSamples = computed(() => {
 const txSamples = computed(() => charSamples.value.filter((s: BleProtocolSample) => s.direction === 'TX'))
 const rxSamples = computed(() => charSamples.value.filter((s: BleProtocolSample) => s.direction === 'RX'))
 
+// 集合里的请求-响应配对样例（同端点）
+const charExamples = computed(() => {
+  void collectionStore.version
+  const svc = targetSvc.value
+  const chr = targetChar.value
+  if (!svc || !chr) return []
+  return (collectionStore.forDevice(props.deviceId)?.examples ?? []).filter(
+    (e) => normalizeUUID(e.serviceUUID) === normalizeUUID(svc) && normalizeUUID(e.characteristicUUID) === normalizeUUID(chr),
+  )
+})
+const txExamples = computed(() => charExamples.value.filter((e) => e.request?.hex))
+const rxExamples = computed(() => charExamples.value.filter((e) => e.response?.hex))
+
+/** 刚连接、尚未展开过服务时，编辑器自动发现全部特征值，避免"无目标可选" */
+async function ensureCharacteristicsLoaded() {
+  const session = bleStore.activeSession
+  if (!session || !session.services.length) return
+  const missing = session.services.filter((s) => !session.characteristics.get(s.uuid)?.length)
+  if (!missing.length) return
+  for (const svc of missing) {
+    try { await bleStore.loadCharacteristics(svc.uuid, session.device.deviceId) } catch { /* 单个服务失败不阻断 */ }
+  }
+  if (!props.lockTarget && (!targetSvc.value || !targetChar.value) && allChars.value.length) {
+    const writable = allChars.value.find((c) => c.write || c.writeNoResponse) ?? allChars.value[0]
+    targetSvc.value = writable.serviceUUID
+    targetChar.value = writable.uuid
+  }
+}
+
 watch(() => props.visible, (v) => {
   if (!v) return
+  ensureCharacteristicsLoaded()
   const init = props.initial
   Object.assign(form, emptyOp(), init ? JSON.parse(JSON.stringify(init)) : {})
   // payload 缺省时用 requestExample 起步（旧命令兼容）
@@ -424,14 +543,26 @@ function handleSave() {
       uni.showToast({ title: t('command.payloadRequired'), icon: 'none' }); return
     }
     if ((form.payloadMode ?? 'hex') === 'hex') {
-      const normalized = normalizeHex(form.payload ?? '')
-      if (!isValidHex(normalized)) {
-        uni.showToast({ title: t('command.invalidPayload'), icon: 'none' }); return
-      }
-      form.payload = normalized
-      // payload 同步为文档请求样例（保持导出文档一致）
-      if (!form.requestExample || form.requestExample === props.initial?.payload) {
-        form.requestExample = normalized
+      if (hasTemplateTokens(form.payload ?? '')) {
+        // 模板：以当前变量渲染校验；文档样例取渲染结果
+        const preview = payloadPreview.value
+        if (!preview || preview.error) {
+          uni.showToast({ title: `${t('command.templateError')}: ${preview?.error ?? ''}`, icon: 'none', duration: 2500 }); return
+        }
+        form.payload = (form.payload ?? '').trim()
+        if (!form.requestExample || form.requestExample === props.initial?.payload || !isValidHex(form.requestExample)) {
+          form.requestExample = preview.hex
+        }
+      } else {
+        const normalized = normalizeHex(form.payload ?? '')
+        if (!isValidHex(normalized)) {
+          uni.showToast({ title: t('command.invalidPayload'), icon: 'none' }); return
+        }
+        form.payload = normalized
+        // payload 同步为文档请求样例（保持导出文档一致）
+        if (!form.requestExample || form.requestExample === props.initial?.payload) {
+          form.requestExample = normalized
+        }
       }
     }
   }
@@ -445,7 +576,7 @@ function handleSave() {
     responseFields: cleanFields(responseFields.value),
     expect: {
       ...expect,
-      fieldAssertions: assertions.value.filter((a) => a.hexValue.trim()),
+      fieldAssertions: assertions.value.filter((a) => (a.hexValue ?? '').trim() || (a.field && (a.value ?? '').trim())),
     },
     variants: variants.value.filter((v) => v.label.trim() && v.payload.trim()),
   }))
@@ -469,7 +600,8 @@ function handleSave() {
 
 .oe-panel {
   width: 100%;
-  max-height: 88vh;
+  /* 定高（而非 max-height）：flex 子项 scroll-view 的 100% 高度才能解析，内容才可滚动 */
+  height: 88%;
   background: var(--bg-card);
   border: 1px solid var(--border-default);
   border-radius: 18px 18px 0 0;
@@ -603,7 +735,25 @@ function handleSave() {
 .oe-add-text { font-size: 11px; color: var(--color-accent); font-weight: 700; }
 
 .oe-kv-row { display: flex; gap: 6px; align-items: flex-end; }
-.oe-kv-cell { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; &--sm { flex: 0 0 76px; } }
+.oe-kv-cell { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; &--sm { flex: 0 0 76px; } &--xs { flex: 0 0 62px; } }
+.oe-kv-picker { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+.oe-kv-picker-text { font-size: 12px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.oe-kv-picker-arrow { font-size: 10px; color: var(--text-muted); flex-shrink: 0; }
+.oe-add-group { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+
+.oe-tpl-preview {
+  display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px;
+  background: rgba(var(--color-accent-rgb), 0.06); border: 1px solid rgba(var(--color-accent-rgb), 0.25);
+  &--error { background: rgba(var(--color-danger-rgb), 0.06); border-color: rgba(var(--color-danger-rgb), 0.3); .oe-tpl-value { color: var(--color-danger); } .oe-tpl-label { color: var(--color-danger); } }
+}
+.oe-tpl-label { font-size: 9px; color: var(--color-accent); font-weight: 700; text-transform: uppercase; flex-shrink: 0; }
+.oe-tpl-value { font-size: 11px; color: var(--text-mono); word-break: break-all; }
+.oe-token-chip {
+  padding: 3px 8px; border-radius: 6px;
+  background: rgba(var(--color-primary-rgb), 0.07); border: 1px solid rgba(var(--color-primary-rgb), 0.25);
+  &:active { opacity: 0.7; }
+}
+.oe-token-chip-text { font-size: 10px; color: var(--color-primary); }
 .oe-kv-label { font-size: 8px; color: var(--text-dimmed); text-transform: uppercase; }
 .oe-kv-input {
   background: var(--bg-input); border: 1px solid var(--border-default); border-radius: 7px;
@@ -628,6 +778,7 @@ function handleSave() {
   &:active { opacity: 0.7; }
 }
 .oe-sample-chip-text { font-size: 11px; color: var(--color-accent); font-weight: 600; }
+.oe-sample-chip--ex { background: rgba(var(--color-primary-rgb), 0.07); border-color: rgba(var(--color-primary-rgb), 0.3); .oe-sample-chip-text { color: var(--color-primary); } }
 
 .oe-btn {
   height: 46px; display: flex; align-items: center; justify-content: center;

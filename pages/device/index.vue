@@ -118,6 +118,10 @@
           <view v-if="expandedSessions.has(deviceId)" class="service-tree">
             <view class="tree-header">
               <text class="tree-title">{{ t('device.servicesTitle') }}</text>
+              <view class="col-chip" :class="{ 'col-chip--none': !collectionNameFor(deviceId) }" @click="openCollectionActions(deviceId)">
+                <text class="col-chip-icon">⬡</text>
+                <text class="col-chip-text">{{ collectionNameFor(deviceId) || t('collection.none') }}</text>
+              </view>
               <view class="export-btn" @click="openExport(deviceId)">
                 <text class="export-btn-icon">⬆</text>
                 <text class="export-btn-label">{{ t('device.export.btn') }}</text>
@@ -311,8 +315,10 @@ import { shortUUID } from '../../utils/hex'
 import {
   buildDeviceReportFilename,
   saveDebugPackFiles,
+  shareFileWithSystem,
   type DeviceReportInfo,
 } from '../../utils/buffer'
+import { useCollectionStore } from '../../store/collectionStore'
 import { matchBuiltinProtocolDocs } from '../../services/builtinProtocolDocs'
 import {
   loadDeviceAnnotations,
@@ -338,6 +344,8 @@ import LeftTabBar from '../../components/LeftTabBar.vue'
 
 const bleStore = useBleStore()
 const appStore = useAppStore()
+const collectionStore = useCollectionStore()
+collectionStore.init()
 const { t } = useI18n()
 const { isWideScreen } = useResponsive()
 
@@ -484,10 +492,42 @@ function selectChar(deviceId: string, serviceId: string, charId: string) {
 const annotationCache = reactive<Record<string, DeviceAnnotations>>({})
 
 function annotationsFor(deviceId: string): DeviceAnnotations {
+  void collectionStore.version
   if (!annotationCache[deviceId]) {
     annotationCache[deviceId] = loadDeviceAnnotations(deviceId)
   }
   return annotationCache[deviceId]
+}
+
+// 集合（工作台）发生导入/删除/绑定变更时，注释缓存失效
+watch(() => collectionStore.version, () => {
+  for (const key of Object.keys(annotationCache)) delete annotationCache[key]
+})
+
+// ── 集合 chip ──────────────────────────────────────────────────────────────
+
+function collectionNameFor(deviceId: string): string {
+  return collectionStore.forDevice(deviceId)?.name ?? ''
+}
+
+function openCollectionActions(deviceId: string) {
+  const col = collectionStore.forDevice(deviceId)
+  const items = [t('collection.openWorkspace')]
+  if (col) items.push(t('collection.actionCopy'))
+  if (col?.boundDeviceIds.includes(deviceId)) items.push(t('collection.actionUnbind'))
+  uni.showActionSheet({
+    itemList: items,
+    success: (res) => {
+      if (res.tapIndex === 0) {
+        uni.navigateTo({ url: `/pages/protocol/index?deviceId=${encodeURIComponent(deviceId)}` })
+      } else if (res.tapIndex === 1 && col) {
+        uni.setClipboardData({ data: collectionStore.serialize(col), success: () => uni.showToast({ title: t('collection.copied'), icon: 'none' }) })
+      } else if (res.tapIndex === 2) {
+        collectionStore.unbind(deviceId)
+        uni.showToast({ title: t('collection.unbound'), icon: 'none' })
+      }
+    },
+  })
 }
 
 function matchedDocsForDevice(deviceId: string) {
@@ -598,7 +638,7 @@ async function handleMtuNegotiate(deviceId: string) {
 
 function goToDebug(deviceId: string) {
   bleStore.switchSession(deviceId)
-  uni.navigateTo({ url: '/pages/debug/index' })
+  uni.switchTab({ url: '/pages/debug/index' })
 }
 
 function goToHistory(deviceId: string) {
@@ -693,6 +733,7 @@ async function confirmExport() {
       samples: session.savedSamples,
       sessionMeta: getActiveSessionMeta(deviceId),
       operationRuns: loadOperationRuns(deviceId),
+      collection: collectionStore.forDevice(deviceId),
       options: {
         purpose: exportPurpose.value,
         notes: exportNotes.value,
@@ -719,33 +760,11 @@ async function confirmExport() {
         content: `${t('device.export.zipFailedNote')}\n${result.folderPath}`,
         showCancel: false, confirmText: t('common.ok'),
       })
-    } else if (plus.os.name === 'Android') {
-      try {
-        const Intent = plus.android.importClass('android.content.Intent')
-        const File = plus.android.importClass('java.io.File')
-        const BuildVersion = plus.android.importClass('android.os.Build$VERSION')
-        const activity = plus.android.runtimeMainActivity()
-        const intent = new Intent(Intent.ACTION_SEND)
-        intent.setType('application/zip')
-        const file = new File(sharePath)
-        if (BuildVersion.SDK_INT >= 24) {
-          const FileProvider = plus.android.importClass('androidx.core.content.FileProvider')
-          const authority = activity.getPackageName() + '.dc.fileprovider'
-          const uri = FileProvider.getUriForFile(activity, authority, file)
-          intent.putExtra(Intent.EXTRA_STREAM, uri)
-          intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        } else {
-          const Uri = plus.android.importClass('android.net.Uri')
-          intent.putExtra(Intent.EXTRA_STREAM, Uri.fromFile(file))
-        }
-        activity.startActivity(Intent.createChooser(intent, t('device.export.shareTitle')))
-      } catch {
+    } else {
+      const shared = await shareFileWithSystem(sharePath, 'application/zip', t('device.export.shareTitle'))
+      if (!shared) {
         uni.showModal({ title: t('device.export.success'), content: `${t('device.export.savePath')}${sharePath}`, showCancel: false, confirmText: t('common.ok') })
       }
-    } else {
-      plus.share.sendWithSystem({ type: 'file', href: sharePath }, () => {}, () => {
-        uni.showModal({ title: t('device.export.success'), content: `${t('device.export.savePath')}${sharePath}`, showCancel: false, confirmText: t('common.ok') })
-      })
     }
     // #endif
     // #ifndef APP-PLUS
@@ -929,6 +948,15 @@ async function confirmExport() {
 }
 .export-btn-icon { font-size: 12px; color: var(--color-accent); }
 .export-btn-label { font-size: 11px; color: var(--color-accent); font-weight: 600; }
+.col-chip {
+  display: flex; align-items: center; gap: 4px; max-width: 42%;
+  padding: 5px 9px; border-radius: 7px;
+  background: rgba(var(--color-primary-rgb), 0.08); border: 1px solid rgba(var(--color-primary-rgb), 0.25);
+  &:active { opacity: 0.7; }
+  &--none { background: var(--bg-elevated); border-color: var(--border-subtle); .col-chip-icon, .col-chip-text { color: var(--text-muted); } }
+}
+.col-chip-icon { font-size: 11px; color: var(--color-primary); flex-shrink: 0; }
+.col-chip-text { font-size: 11px; color: var(--color-primary); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .refresh-btn { width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; background: rgba(var(--color-primary-rgb), 0.06); border: 1px solid rgba(var(--color-primary-rgb), 0.15); border-radius: 7px; &:active { opacity: 0.7; } }
 .refresh-icon { font-size: 15px; color: var(--color-primary); }
 

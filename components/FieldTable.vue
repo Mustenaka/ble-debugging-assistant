@@ -25,8 +25,13 @@
         </view>
         <view class="ft-cell">
           <text class="ft-cell-label">{{ t('annotation.fieldType') }}</text>
-          <input class="ft-input mono" :value="row.type" :placeholder="t('annotation.fieldTypePlaceholder')" placeholder-class="ft-ph"
-            @input="row.type = $event.detail.value" />
+          <view class="ft-type-row">
+            <input class="ft-input mono ft-input--type" :class="{ 'ft-input--known': isKnownType(row.type) }" :value="row.type" :placeholder="t('annotation.fieldTypePlaceholder')" placeholder-class="ft-ph"
+              @input="row.type = $event.detail.value" />
+            <picker :range="typeLabels" @change="onPickType(row, $event)">
+              <view class="ft-type-pick"><text class="ft-type-pick-text">▾</text></view>
+            </picker>
+          </view>
         </view>
         <view class="ft-del" @click="removeRow(i)">
           <text class="ft-del-icon">✕</text>
@@ -51,11 +56,25 @@
 <script setup lang="ts">
 import { useI18n } from '../composables/useI18n'
 import type { ProtocolFieldDoc } from '../utils/protocolDocs'
+import { FIELD_TYPE_OPTIONS, normalizeFieldType } from '../utils/fields'
 
 const props = defineProps<{ fields: ProtocolFieldDoc[] }>()
 const emit = defineEmits<{ 'update:fields': [fields: ProtocolFieldDoc[]] }>()
 
 const { t } = useI18n()
+const typeLabels = FIELD_TYPE_OPTIONS.map((o) => o.label)
+
+function isKnownType(raw: string): boolean {
+  return normalizeFieldType(raw) !== null
+}
+
+function onPickType(row: ProtocolFieldDoc, e: any) {
+  const idx = Number(e?.detail?.value ?? -1)
+  const opt = FIELD_TYPE_OPTIONS[idx]
+  if (!opt) return
+  row.type = opt.value
+  if (opt.size && !row.length) row.length = String(opt.size)
+}
 
 function addRow() {
   emit('update:fields', [...props.fields, { offset: '', length: '', type: '', name: '', meaning: '' }])
@@ -93,7 +112,16 @@ function removeRow(index: number) {
 .ft-input {
   background: var(--bg-panel); border: 1px solid var(--border-subtle); border-radius: 7px;
   padding: 6px 8px; font-size: 12px; color: var(--text-primary); width: 100%; min-height: 32px;
+  &--type { flex: 1; min-width: 0; }
+  &--known { color: var(--color-accent); }
 }
+.ft-type-row { display: flex; gap: 4px; align-items: center; }
+.ft-type-pick {
+  width: 26px; height: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  background: var(--bg-panel); border: 1px solid var(--border-subtle); border-radius: 7px;
+  &:active { opacity: 0.7; }
+}
+.ft-type-pick-text { font-size: 12px; color: var(--color-primary); }
 .ft-ph { color: var(--text-dimmed); }
 .ft-del {
   width: 26px; height: 32px; display: flex; align-items: center; justify-content: center;

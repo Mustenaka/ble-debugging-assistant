@@ -73,6 +73,12 @@
           <view v-else class="entry-data">
             <text v-if="displayMode === 'hex' || displayMode === 'both'" class="data-hex mono" :class="`hex-${entry.direction.toLowerCase()}`">{{ entry.hex }}</text>
             <text v-if="displayMode === 'ascii' || displayMode === 'both'" class="data-ascii mono" :class="`ascii-${entry.direction.toLowerCase()}`">{{ entry.ascii }}</text>
+            <view v-if="entry.decodedFields?.length" class="decoded-row">
+              <view v-for="(f, fi) in entry.decodedFields" :key="fi" class="decoded-chip" :class="{ 'decoded-chip--missing': f.value === '∅' }">
+                <text class="decoded-name">{{ f.name }}</text>
+                <text class="decoded-value mono">{{ f.value }}</text>
+              </view>
+            </view>
           </view>
         </view>
 
@@ -198,6 +204,16 @@ function formatBytes(n: number): string {
 .toggle-btn--hb.active { border-color: rgba(var(--color-danger-rgb), 0.35); background: rgba(var(--color-danger-rgb), 0.08); .toggle-icon { color: var(--color-danger); } }
 
 .log-actions { display: flex; gap: 4px; margin-left: auto; }
+
+/* 解码字段 */
+.decoded-row { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.decoded-chip {
+  display: flex; align-items: center; gap: 4px; padding: 1px 6px; border-radius: 4px;
+  background: rgba(var(--color-accent-rgb), 0.07); border: 1px solid rgba(var(--color-accent-rgb), 0.2);
+  &--missing { opacity: 0.5; border-style: dashed; }
+}
+.decoded-name { font-size: 9px; color: var(--text-muted); }
+.decoded-value { font-size: 10px; color: var(--color-accent); font-weight: 600; }
 .action-btn {
   width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
   background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: 6px;

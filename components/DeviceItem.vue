@@ -27,6 +27,9 @@
         <view v-if="hasPinConfig" class="pin-badge">
           <text class="pin-badge-text">🔑</text>
         </view>
+        <view v-if="isMock" class="mock-badge">
+          <text class="mock-badge-text">MOCK</text>
+        </view>
       </view>
       <text class="device-id mono">{{ device.deviceId }}</text>
       <view v-if="device.advertisServiceUUIDs?.length" class="service-uuids">
@@ -80,6 +83,7 @@ defineEmits<{
 
 const rssiLevel = computed(() => rssiToLevel(props.device.RSSI))
 const rssiColor = computed(() => rssiToColor(props.device.RSSI))
+const isMock = computed(() => props.device.deviceId.startsWith('mock:'))
 const displayName = computed(() => {
   const n = props.device.name?.trim()
   return (!n || n === 'N/A') ? (props.unknownLabel ?? '未知设备') : n
@@ -150,6 +154,8 @@ onUnmounted(() => { if (pulseTimer) clearInterval(pulseTimer) })
 .pin-btn-icon { font-size: 16px; line-height: 1; }
 .pin-badge { display: flex; align-items: center; }
 .pin-badge-text { font-size: 12px; line-height: 1; }
+.mock-badge { background: rgba(var(--color-warning-rgb), 0.12); border: 1px solid rgba(var(--color-warning-rgb), 0.4); border-radius: 4px; padding: 1px 6px; flex-shrink: 0; }
+.mock-badge-text { font-size: 9px; color: var(--color-warning); font-weight: 700; letter-spacing: 0.5px; }
 
 /* 脉冲光效 */
 .signal-pulse { position: absolute; right: 0; top: 0; bottom: 0; width: 3px; border-radius: 0 12px 12px 0; transition: opacity 0.6s ease; }

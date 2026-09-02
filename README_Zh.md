@@ -8,10 +8,10 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178c6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
 [![Pinia](https://img.shields.io/badge/Pinia-2.x-ffd859?style=flat-square)](https://pinia.vuejs.org/)
 [![平台](https://img.shields.io/badge/平台-Android%20%7C%20iOS-lightgrey?style=flat-square)](https://uniapp.dcloud.net.cn/)
-[![版本](https://img.shields.io/badge/版本-1.2.0-00F5FF?style=flat-square)](#)
+[![版本](https://img.shields.io/badge/版本-0.2.0-00F5FF?style=flat-square)](#)
 [![协议](https://img.shields.io/badge/协议-MIT-green?style=flat-square)](#)
 
-[English](./README.md) · [功能特性](#功能特性) · [快速开始](#快速开始) · [架构设计](#架构设计) · [界面截图](#界面截图)
+[English](./README.md) · [使用说明书](./docs/USER_GUIDE_zh.md) · [功能特性](#功能特性) · [快速开始](#快速开始) · [架构设计](#架构设计) · [界面截图](#界面截图)
 
 </div>
 
@@ -48,6 +48,16 @@
 - **MTU 协商** — 每设备独立协商 MTU 大小（23–512 字节），实时显示协商结果
 - **多设备同时调试** — 同时连接并调试多个 BLE 设备，每个设备拥有完全独立的日志缓冲区、服务树和通信状态
 
+### Postman 式工作流
+- **协议集合（Collection）** — 服务、特征值、可执行命令、变量、样例和设备拓扑快照统一放进与设备实例解耦的集合；按服务 UUID 指纹（可加设备名规则）自动匹配设备，也可显式绑定，可作为 `collection.json` 分享
+- **导入与合并** — 从粘贴 / 剪贴板 / 文件选择器（H5 与 Android）导入 `collection.json`、`protocol.json`、Debug Pack `.zip` 或旧版注释；新建集合或按"保留本地 / 覆盖"策略合并。导出 Debug Pack 给 AI，AI 补全 `collection.json` 后再导回
+- **集合详情** — 打开任意集合查看指纹与拓扑快照，就地编辑变量，编辑或删除命令，重命名 / 备注 / 删除配对样例
+- **载荷模板与变量** — 命令、变体和控制台输入支持 `{{len}}`、`{{len:-2}}`、`{{seq}}`、`{{sum}}`、`{{xor}}`、`{{crc8}}`、`{{crc16}}`、`{{crc16ccitt}}`、`{{变量}}`、`{{变量:u16le}}`，实时渲染预览；集合级变量 + 设备级覆盖
+- **类型化字段解码** — 字段表使用真实类型（`u8`、`u16le`、`i16be`、`f32le`、`ascii`、`bytes`、`bitmask`…）；收发日志直接显示 `字段=值`，断言可按字段比较（`==`、`>`、`in`、`range`…）
+- **Runner** — 顺序执行支持步间延时、失败即停、循环次数、展开变体，报告含通过率与 RTT 均值
+- **配对样例** — 长按 TX 日志自动匹配后续响应保存为请求/响应样例，或把命令最近一次执行存为样例；样例进入文档、命令编辑器和 Mock 设备
+- **Mock 模式** — 扫描结果中出现内置演示设备和每个集合对应的 Mock 设备，所有 BLE 调用路由到应用内 Provider，无硬件（含 H5）也能走完全流程
+
 ### 开发者体验
 - **快捷命令** — 像 Postman 保存请求一样保存常用指令，包含名称、类型、描述、命令内容和内容格式；长按删除，一键复用
 - **通信日志** — 带时间戳的 TX/RX/SYS 彩色日志，环形缓冲区最多保留 2000 条；每设备完全独立
@@ -71,11 +81,19 @@
 
 ## 界面截图
 
-> _左：暗色主题 · 右：亮色主题_
+真机截图（Android）。完整的逐界面说明见[使用说明书](./docs/USER_GUIDE_zh.md)。
 
-| 扫描页 | 设备总览树 | 调试控制台 |
-|--------|-----------|-----------|
-| 雷达动效、RSSI 信号格、已连接标记 | 多设备树 · MTU 协商面板 · RSSI 图表 | 设备 Tab 切换 · HEX/ASCII 收发 · 日志面板 · 协议插件 |
+| 扫描（演示设备入口） | 控制台：RX 自动解码 | 命令面板 |
+|---|---|---|
+| <img src="docs/screenshots/01-scan-demo-entry.png" width="230"> | <img src="docs/screenshots/03-console-decoded.png" width="230"> | <img src="docs/screenshots/06-commands-panel.png" width="230"> |
+
+| 命令编辑器（模板） | 顺序执行报告 | 工作台 |
+|---|---|---|
+| <img src="docs/screenshots/07-operation-editor-template.png" width="230"> | <img src="docs/screenshots/12-runner-report.png" width="230"> | <img src="docs/screenshots/13-workspace.png" width="230"> |
+
+| 协议集合 | 导入 Debug Pack zip | 集合详情 |
+|---|---|---|
+| <img src="docs/screenshots/15-collections.png" width="230"> | <img src="docs/screenshots/16-import-zip-preview.png" width="230"> | <img src="docs/screenshots/17-collection-detail.png" width="230"> |
 
 ---
 
@@ -85,12 +103,12 @@
 |------|---------|
 | 框架 | UniApp（Vue 3 + `<script setup>`） |
 | 语言 | TypeScript 5 |
-| 状态管理 | Pinia 2 — `bleStore`（会话 + 适配器）· `appStore`（主题/语言）· `protocolStore`（插件） |
-| BLE API | UniApp 原生 BLE API — Promise 化封装，每设备独立状态机 |
+| 状态管理 | Pinia 2 — `bleStore`（会话 + 适配器 + Runner）· `collectionStore`（集合/变量/样例）· `appStore`（主题/语言/Mock）· `protocolStore`（插件） |
+| BLE API | UniApp 原生 BLE API — Promise 化封装，每设备独立状态机；`mock:` 设备 ID 路由到 `services/mockBle.ts` |
 | 样式 | Scoped SCSS + CSS 自定义属性（`.theme-dark` / `.theme-light` 双主题类） |
 | 响应式布局 | `useResponsive` composable — ≥768 px 使用 `LeftTabBar` 组件；窄屏保留原生底部 TabBar |
 | 国际化 | 自研 `useI18n` composable（dot-notation key，响应式语言切换） |
-| 持久化 | `uni.setStorageSync`（设置、快捷命令、协议插件、设备 PIN） |
+| 持久化 | `uni.setStorageSync`（设置、集合 `ble_collections`、设备变量、快捷命令、协议插件、设备 PIN、会话档案与执行记录） |
 
 ---
 
@@ -151,7 +169,9 @@ uniapp-ble-debugging-assistant/
 │   ├── scan/index.vue          # 设备扫描页——发现设备，已连接设备带标记
 │   ├── device/index.vue        # 多设备总览树——所有会话的服务与特征值
 │   ├── debug/index.vue         # BLE 调试控制台——DeviceTabBar + 每会话独立面板
-│   └── protocol/index.vue      # 协议插件管理页（添加 / 编辑 / 启用）
+│   ├── protocol/index.vue      # 集合与插件——集合列表、导入（json / zip）、解析插件
+│   ├── collection/index.vue    # 集合详情——拓扑、变量、命令、样例
+│   └── history/index.vue       # 传输历史——按设备的会话档案与时间线
 │
 ├── components/
 │   ├── DeviceTabBar.vue         # 已连接设备的横向 Tab 切换栏
@@ -162,13 +182,20 @@ uniapp-ble-debugging-assistant/
 │   ├── RssiChart.vue            # RSSI 信号历史柱状图
 │   ├── DiffModal.vue            # 特征值历史记录弹窗（逐字节 Diff 高亮）
 │   ├── LeftTabBar.vue           # ≥768 px 宽屏固定 60 px 左侧导航栏
-│   └── SettingsPanel.vue        # 底部弹出设置面板（主题 & 语言切换）
+│   ├── SettingsPanel.vue        # 底部弹出设置面板（主题、语言、演示 / Mock 模式）
+│   ├── CommandPanel.vue         # Postman 式命令面板（执行 / 变量 / Runner / 样例）
+│   ├── OperationEditor.vue      # 命令编辑器（载荷模板、期望响应、断言、变体）
+│   ├── AnnotationEditor.vue     # 服务 / 接口文档编辑器
+│   ├── FieldTable.vue           # 类型化字段表编辑
+│   ├── HeartbeatPanel.vue       # 心跳压测面板
+│   └── PinInputModal.vue        # 设备 PIN 配置
 │
 ├── services/
 │   ├── bleManager.ts            # BLE 封装层
 │                                #   适配器状态机：UNINITIALIZED → IDLE ↔ SCANNING
 │                                #   每设备状态：Map<deviceId, CONNECTING|CONNECTED|DISCONNECTED>
 │                                #   + getRSSI(deviceId)  + negotiateMTU(deviceId, mtu)
+│   ├── mockBle.ts               # Mock BLE Provider：演示设备 + 由集合生成的 Mock 设备
 │   └── builtinProtocolDocs.ts   # 加载内置 Markdown 协议模板，并提供 UUID 匹配能力
 │
 ├── store/
@@ -176,7 +203,8 @@ uniapp-ble-debugging-assistant/
 │   │                            #   sessions: Map<deviceId, DeviceSession>  ← 每设备独立数据
 │   │                            #   activeSessionId: string                  ← 驱动调试页渲染
 │   │                            #   + 适配器层（扫描设备、过滤、快捷命令、最近设备）
-│   ├── appStore.ts              # 应用设置状态（主题、语言、CSS 变量）
+│   ├── appStore.ts              # 应用设置状态（主题、语言、Mock 模式、CSS 变量）
+│   ├── collectionStore.ts       # utils/collection.ts 的响应式外壳（集合、变量、样例）
 │   └── protocolStore.ts         # 协议插件注册表（添加 / 执行 / 持久化）
 │
 ├── composables/
@@ -189,11 +217,24 @@ uniapp-ble-debugging-assistant/
 │
 ├── utils/
 │   ├── hex.ts                   # HEX↔ArrayBuffer、ASCII、UUID、RSSI 工具函数
-│   ├── buffer.ts                # 日志条目、环形缓冲区、导出、持久化、协议样例保存
-│   └── protocolDocs.ts          # Markdown 协议解析 + AI 报告 / 协议 JSON / Mock JSON 生成
+│   ├── buffer.ts                # 日志条目、环形缓冲区、文件保存 / 分享、快捷命令、样例、PIN
+│   ├── collection.ts            # 集合模型：指纹匹配、绑定、迁移、导入 / 合并
+│   ├── payload.ts               # 载荷模板引擎（{{len}} {{seq}} {{sum}} {{crc16}} {{变量}}）
+│   ├── fields.ts                # 字段类型系统：解码 / 编码 / 字段断言
+│   ├── runner.ts                # 顺序执行选项与计划
+│   ├── examples.ts              # 请求 / 响应样例配对
+│   ├── zipReader.ts             # 极简 zip 读取（store + deflate），用于导入 Debug Pack
+│   ├── importFile.ts            # 文件选择（H5 / Android）与导入来源解析
+│   ├── deviceArchive.ts         # 会话档案、命令执行记录、文档合并链
+│   ├── heartbeat.ts             # 心跳配置与运行时
+│   ├── exporters.ts             # Debug Pack 生成器（PROTOCOL.md、protocol.json、SESSION_LOG.md、AI_PROMPT.md、mock.json、collection.json）
+│   └── protocolDocs.ts          # Markdown 协议解析 + 端点目录构建
 │
 ├── docs/
-│   └── protocols/               # 可本地预览、也会被 App 解析加载的 Markdown 协议模板
+│   ├── protocols/               # 可本地预览、也会被 App 解析加载的 Markdown 协议模板
+│   ├── screenshots/             # 说明书使用的真机截图
+│   ├── USER_GUIDE.md            # 使用说明书（英文）
+│   └── USER_GUIDE_zh.md         # 使用说明书（中文）
 │
 ├── scripts/
 │   └── preview-protocol-docs.mjs # 本地协议模板预览命令（npm run docs:protocol）

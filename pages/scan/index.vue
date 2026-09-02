@@ -17,6 +17,9 @@
             <text class="status-text">{{ stateLabel }}</text>
           </view>
           <view class="status-right">
+            <view v-if="appStore.mockMode" class="mock-chip" @click="showSettings = true">
+              <text class="mock-chip-text">{{ t('scan.mockChip') }}</text>
+            </view>
             <text v-if="appStore.appVersion" class="version-chip">{{ appStore.appVersion }}</text>
             <!-- 语言快切 -->
             <view class="lang-quick-btn" @click="appStore.toggleLocale()">
@@ -156,6 +159,9 @@
                 <view v-else class="empty-idle">
                   <text class="empty-icon">⊙</text>
                   <text class="empty-tip">{{ t('scan.tapToScan') }}</text>
+                  <view class="demo-btn" @click="enableDemo">
+                    <text class="demo-btn-text">{{ t('scan.noHardware') }} {{ t('scan.connectDemo') }} ›</text>
+                  </view>
                 </view>
               </view>
 
@@ -212,6 +218,7 @@ import { useAppStore } from '../../store/appStore'
 import { useI18n } from '../../composables/useI18n'
 import { useResponsive } from '../../composables/useResponsive'
 import { bleManager, BleAdapterState, type BleDevice } from '../../services/bleManager'
+import { matchBuiltinProtocolDocs } from '../../services/builtinProtocolDocs'
 import {
   saveDevicePin, removeDevicePin, loadDevicePins,
   type DevicePinConfig,
@@ -296,6 +303,7 @@ async function autoSendPin(config: DevicePinConfig, deviceId: string) {
 
 onMounted(() => {
   bleStore.init()
+  bleStore.setBuiltinDocsProvider(matchBuiltinProtocolDocs)
   appStore.applySystemStyle()
   requestBlePermission()
 })
@@ -358,11 +366,17 @@ async function toggleScan() {
 
 function clearDevices() { bleStore.scannedDevices = [] }
 
+/** 无硬件：开启 Mock 模式并扫描出演示设备 */
+async function enableDemo() {
+  appStore.setMockMode(true)
+  if (!bleStore.isScanning) await toggleScan()
+}
+
 async function connectDevice(device: BleDevice) {
   // 已连接：切换到该设备的 session 并跳转调试页
   if (bleStore.sessions.has(device.deviceId)) {
     bleStore.switchSession(device.deviceId)
-    uni.navigateTo({ url: '/pages/debug/index' })
+    uni.switchTab({ url: '/pages/debug/index' })
     return
   }
 
@@ -390,7 +404,7 @@ async function connectDevice(device: BleDevice) {
       }
     }
 
-    uni.navigateTo({ url: '/pages/debug/index' })
+    uni.switchTab({ url: '/pages/debug/index' })
   } catch (e: any) {
     uni.hideLoading()
     const errMsg = e.message ?? t('scan.connectFailed')
@@ -416,7 +430,7 @@ async function quickReconnect(recent: { deviceId: string; name: string }) {
   // 已连接：直接切换 session 跳调试页
   if (bleStore.sessions.has(recent.deviceId)) {
     bleStore.switchSession(recent.deviceId)
-    uni.navigateTo({ url: '/pages/debug/index' })
+    uni.switchTab({ url: '/pages/debug/index' })
     return
   }
 
@@ -436,7 +450,7 @@ async function quickReconnect(recent: { deviceId: string; name: string }) {
       await autoSendPin(pinConfig, recent.deviceId)
     }
 
-    uni.navigateTo({ url: '/pages/debug/index' })
+    uni.switchTab({ url: '/pages/debug/index' })
   } catch (e: any) {
     uni.hideLoading()
     uni.showToast({ title: e.message ?? t('scan.reconnectFailed'), icon: 'none' })
@@ -550,6 +564,12 @@ function formatRelativeTime(ts: number): string {
 
 .status-right { display: flex; align-items: center; gap: 6px; }
 
+.mock-chip {
+  padding: 2px 7px; border-radius: 5px; margin-right: 4px;
+  background: rgba(var(--color-warning-rgb), 0.12); border: 1px solid rgba(var(--color-warning-rgb), 0.45);
+  &:active { opacity: 0.7; }
+}
+.mock-chip-text { font-size: 9px; font-weight: 700; color: var(--color-warning); letter-spacing: 0.5px; }
 .version-chip {
   font-size: 10px; color: var(--text-dimmed);
   background: var(--bg-elevated); padding: 2px 7px; border-radius: 4px;
@@ -700,6 +720,12 @@ function formatRelativeTime(ts: number): string {
 .empty-idle { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .empty-icon { font-size: 40px; color: var(--bg-elevated); }
 .empty-tip { font-size: 13px; color: var(--text-muted); text-align: center; line-height: 1.6; }
+.demo-btn {
+  margin-top: 4px; padding: 8px 16px; border-radius: 10px;
+  background: rgba(var(--color-warning-rgb), 0.08); border: 1px solid rgba(var(--color-warning-rgb), 0.35);
+  &:active { opacity: 0.75; }
+}
+.demo-btn-text { font-size: 12px; color: var(--color-warning); font-weight: 600; }
 
 /* ── 错误提示 ── */
 .error-toast {

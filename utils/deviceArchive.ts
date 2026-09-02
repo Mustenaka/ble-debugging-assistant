@@ -1,226 +1,47 @@
 /**
  * 设备档案层：
- *  1. 用户协议注释（按设备持久化，可覆盖内置协议模板）
- *  2. 会话传输记录（按设备分会话持久化缓存，用于跨会话追踪问题）
+ *  1. 用户协议注释：已迁移到 Collection 层（utils/collection.ts），此处 re-export 兼容 API
+ *  2. 命令执行记录（Postman 的历史锚点）
+ *  3. 会话传输记录（按设备分会话持久化缓存，用于跨会话追踪问题）
  */
 
-import { normalizeUUID } from './hex'
 import type { LogEntry, LogDirection } from './buffer'
 import type {
   MatchedProtocolDocs,
   ProtocolServiceDoc,
   ProtocolCharacteristicDoc,
   ProtocolInterfaceDoc,
-  ProtocolFieldDoc,
 } from './protocolDocs'
+import { charAnnotationKey, type OperationAnnotation, type DeviceAnnotations } from './collection'
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 一、用户协议注释
+// 一、用户协议注释 —— 已迁移到 Collection 层（utils/collection.ts），此处保留 re-export
+//     以兼容既有调用方；按 deviceId 的读写在内部解析到匹配的集合。
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** 可执行命令的动作类型（Postman 的 Method） */
-export type OperationActionType = 'write' | 'writeNoResponse' | 'read'
-
-/** 期望响应（Postman 的 Tests）：判定 PASS / FAIL / TIMEOUT */
-export interface OperationExpect {
-  enabled: boolean
-  /** 响应特征值 UUID（空 = 任意已订阅特征值的 RX） */
-  responseCharacteristicUUID: string
-  /** HEX 前缀匹配（空 = 任意内容） */
-  matchHex: string
-  timeoutMs: number
-  /** P3 字段级断言：响应指定偏移处的字节应等于 hexValue（如 offset=2, hexValue="01"） */
-  fieldAssertions?: { offset: number; hexValue: string }[]
-}
-
-/** P2 载荷变体：同一命令的枚举取值（01=开启 / 02=读取 / 03=关闭） */
-export interface OperationVariant {
-  label: string
-  payload: string
-}
-
-export interface OperationAnnotation {
-  id: string
-  name: string
-  operationId?: string
-  description?: string
-  request?: string
-  response?: string
-  requestExample?: string
-  responseExample?: string
-  mockRule?: string
-  requestFields: ProtocolFieldDoc[]
-  responseFields: ProtocolFieldDoc[]
-  // ── 执行属性（可选，缺省时按 write + requestExample 执行）──
-  actionType?: OperationActionType
-  payloadMode?: 'hex' | 'ascii'
-  payload?: string
-  expect?: OperationExpect
-  variants?: OperationVariant[]
-}
-
-export function defaultOperationExpect(): OperationExpect {
-  return { enabled: false, responseCharacteristicUUID: '', matchHex: '', timeoutMs: 2000, fieldAssertions: [] }
-}
-
-/** 命令的可执行载荷（payload 优先，回落到 requestExample） */
-export function operationPayload(op: OperationAnnotation): string {
-  return (op.payload ?? '').trim() || (op.requestExample ?? '').trim()
-}
-
-export interface ServiceAnnotation {
-  uuid: string
-  name?: string
-  role?: string
-  summary?: string
-  updatedAt: number
-}
-
-export interface CharAnnotation {
-  serviceUUID: string
-  uuid: string
-  name?: string
-  direction?: string
-  valueFormat?: string
-  description?: string
-  operations: OperationAnnotation[]
-  updatedAt: number
-}
-
-export interface DeviceAnnotations {
-  deviceId: string
-  deviceName?: string
-  /** key: normalizeUUID(serviceUUID) */
-  services: Record<string, ServiceAnnotation>
-  /** key: `${normalizeUUID(svc)}::${normalizeUUID(char)}` */
-  characteristics: Record<string, CharAnnotation>
-  updatedAt: number
-}
-
-/** 注释编辑器预填值（UI 层共用） */
-export interface AnnotationEditorInitial {
-  name?: string
-  role?: string
-  summary?: string
-  direction?: string
-  valueFormat?: string
-  description?: string
-  operations?: OperationAnnotation[]
-}
-
-const ANNOTATIONS_KEY = 'ble_device_annotations'
-
-export function charAnnotationKey(serviceUUID: string, charUUID: string): string {
-  return `${normalizeUUID(serviceUUID)}::${normalizeUUID(charUUID)}`
-}
-
-function loadAllAnnotations(): Record<string, DeviceAnnotations> {
-  try {
-    const raw = uni.getStorageSync(ANNOTATIONS_KEY)
-    return raw ? JSON.parse(raw) : {}
-  } catch {
-    return {}
-  }
-}
-
-function saveAllAnnotations(all: Record<string, DeviceAnnotations>): void {
-  try {
-    uni.setStorageSync(ANNOTATIONS_KEY, JSON.stringify(all))
-  } catch (e) {
-    console.error('[DeviceArchive] saveAllAnnotations failed:', e)
-  }
-}
-
-export function loadDeviceAnnotations(deviceId: string): DeviceAnnotations {
-  return (
-    loadAllAnnotations()[deviceId] ?? {
-      deviceId,
-      services: {},
-      characteristics: {},
-      updatedAt: 0,
-    }
-  )
-}
-
-export function saveServiceAnnotation(deviceId: string, deviceName: string, ann: ServiceAnnotation): DeviceAnnotations {
-  const all = loadAllAnnotations()
-  const dev = all[deviceId] ?? { deviceId, services: {}, characteristics: {}, updatedAt: 0 }
-  dev.deviceName = deviceName || dev.deviceName
-  dev.services[normalizeUUID(ann.uuid)] = { ...ann, updatedAt: Date.now() }
-  dev.updatedAt = Date.now()
-  all[deviceId] = dev
-  saveAllAnnotations(all)
-  return dev
-}
-
-export function saveCharAnnotation(deviceId: string, deviceName: string, ann: CharAnnotation): DeviceAnnotations {
-  const all = loadAllAnnotations()
-  const dev = all[deviceId] ?? { deviceId, services: {}, characteristics: {}, updatedAt: 0 }
-  dev.deviceName = deviceName || dev.deviceName
-  dev.characteristics[charAnnotationKey(ann.serviceUUID, ann.uuid)] = { ...ann, updatedAt: Date.now() }
-  dev.updatedAt = Date.now()
-  all[deviceId] = dev
-  saveAllAnnotations(all)
-  return dev
-}
-
-export function removeCharAnnotation(deviceId: string, serviceUUID: string, charUUID: string): void {
-  const all = loadAllAnnotations()
-  const dev = all[deviceId]
-  if (!dev) return
-  delete dev.characteristics[charAnnotationKey(serviceUUID, charUUID)]
-  dev.updatedAt = Date.now()
-  saveAllAnnotations(all)
-}
-
-/** 单条命令 upsert：命令面板/命令编辑器直接落库，不必整个特征值重存 */
-export function upsertOperationAnnotation(
-  deviceId: string,
-  deviceName: string,
-  serviceUUID: string,
-  charUUID: string,
-  op: OperationAnnotation,
-): DeviceAnnotations {
-  const all = loadAllAnnotations()
-  const dev = all[deviceId] ?? { deviceId, services: {}, characteristics: {}, updatedAt: 0 }
-  dev.deviceName = deviceName || dev.deviceName
-  const key = charAnnotationKey(serviceUUID, charUUID)
-  const charAnn: CharAnnotation = dev.characteristics[key] ?? {
-    serviceUUID,
-    uuid: charUUID,
-    operations: [],
-    updatedAt: 0,
-  }
-  const idx = charAnn.operations.findIndex((o) => o.id === op.id)
-  if (idx >= 0) charAnn.operations[idx] = { ...op }
-  else charAnn.operations.push({ ...op })
-  charAnn.updatedAt = Date.now()
-  dev.characteristics[key] = charAnn
-  dev.updatedAt = Date.now()
-  all[deviceId] = dev
-  saveAllAnnotations(all)
-  return dev
-}
-
-/** 删除单条命令 */
-export function removeOperationAnnotation(
-  deviceId: string,
-  serviceUUID: string,
-  charUUID: string,
-  opId: string,
-): DeviceAnnotations {
-  const all = loadAllAnnotations()
-  const dev = all[deviceId] ?? { deviceId, services: {}, characteristics: {}, updatedAt: 0 }
-  const key = charAnnotationKey(serviceUUID, charUUID)
-  const charAnn = dev.characteristics[key]
-  if (charAnn) {
-    charAnn.operations = charAnn.operations.filter((o) => o.id !== opId)
-    charAnn.updatedAt = Date.now()
-    dev.updatedAt = Date.now()
-    saveAllAnnotations(all)
-  }
-  return dev
-}
+export {
+  defaultOperationExpect,
+  operationPayload,
+  charAnnotationKey,
+  loadDeviceAnnotations,
+  saveServiceAnnotation,
+  saveCharAnnotation,
+  removeCharAnnotation,
+  upsertOperationAnnotation,
+  removeOperationAnnotation,
+} from './collection'
+export type {
+  OperationActionType,
+  AssertionOp,
+  FieldAssertion,
+  OperationExpect,
+  OperationVariant,
+  OperationAnnotation,
+  ServiceAnnotation,
+  CharAnnotation,
+  DeviceAnnotations,
+  AnnotationEditorInitial,
+} from './collection'
 
 // ── 命令执行记录（Postman 的历史锚点）──────────────────────────────────────
 
@@ -292,6 +113,7 @@ export function operationToInterfaceDoc(op: OperationAnnotation): ProtocolInterf
     response: op.response,
     requestExample: op.requestExample,
     responseExample: op.responseExample,
+    payload: op.payload && op.payload !== op.requestExample ? op.payload : undefined,
     mock: op.mockRule,
     description: op.description,
     requestFields: op.requestFields ?? [],

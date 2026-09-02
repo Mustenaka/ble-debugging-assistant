@@ -115,6 +115,22 @@
       <!-- 分割线 -->
       <view class="section-divider" />
 
+      <!-- ── 演示 / Mock 模式 ─────────────────────────────── -->
+      <view class="settings-section">
+        <view class="mock-row" @click="appStore.setMockMode(!appStore.mockMode)">
+          <view class="mock-info">
+            <text class="section-label">{{ t('settings.mockMode') }}</text>
+            <text class="mock-desc">{{ t('settings.mockModeDesc') }}</text>
+          </view>
+          <view class="mock-switch" :class="{ 'mock-switch--on': appStore.mockMode }">
+            <view class="mock-thumb" />
+          </view>
+        </view>
+      </view>
+
+      <!-- 分割线 -->
+      <view class="section-divider" />
+
       <!-- ── 关于 ──────────────────────────────────────────── -->
       <view class="settings-section about-section">
         <view class="about-row">
@@ -542,5 +558,20 @@ const { t } = useI18n()
 .safe-area-bottom {
   height: env(safe-area-inset-bottom, 16px);
   min-height: 16px;
+}
+
+/* ── Mock 模式 ── */
+.mock-row { display: flex; align-items: center; gap: 12px; &:active { opacity: 0.85; } }
+.mock-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.mock-desc { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+.mock-switch {
+  width: 44px; height: 26px; border-radius: 13px; flex-shrink: 0;
+  background: var(--bg-elevated); border: 1px solid var(--border-default); position: relative; transition: all 0.2s;
+  &--on { background: var(--color-primary); border-color: var(--color-primary); }
+}
+.mock-thumb {
+  position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; border-radius: 50%; background: #fff;
+  transition: transform 0.2s; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  .mock-switch--on & { transform: translateX(18px); }
 }
 </style>

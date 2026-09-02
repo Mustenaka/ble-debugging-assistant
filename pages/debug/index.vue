@@ -139,6 +139,8 @@
             :inject-data="hexInject"
             :is-sending="isSending"
             :disabled="!canWrite || !bleStore.isConnected"
+            :template-renderer="renderTemplate"
+            :variable-names="variableNames"
             :hex-placeholder="t('hexInput.hexPlaceholder')"
             :ascii-placeholder="t('hexInput.asciiPlaceholder')"
             :hex-error="t('hexInput.hexError')"
@@ -315,6 +317,8 @@ import { useResponsive } from '../../composables/useResponsive'
 import { isValidHex, normalizeHex, shortUUID } from '../../utils/hex'
 import type { QuickCommandType } from '../../utils/buffer'
 import { useProtocolStore } from '../../store/protocolStore'
+import { useCollectionStore } from '../../store/collectionStore'
+import { matchBuiltinProtocolDocs } from '../../services/builtinProtocolDocs'
 import BleLogPanel from '../../components/BleLogPanel.vue'
 import HexInput from '../../components/HexInput.vue'
 import SettingsPanel from '../../components/SettingsPanel.vue'
@@ -325,12 +329,26 @@ import HeartbeatPanel from '../../components/HeartbeatPanel.vue'
 import CommandPanel from '../../components/CommandPanel.vue'
 import OperationEditor from '../../components/OperationEditor.vue'
 import type { OperationAnnotation } from '../../utils/deviceArchive'
-import type { LogEntry } from '../../utils/buffer'
+import { formatTimestamp, type LogEntry } from '../../utils/buffer'
+import { findPairedRx, exampleFromLogs, saveExampleForDevice } from '../../utils/examples'
 
 const bleStore = useBleStore()
 const appStore = useAppStore()
 const protocolStore = useProtocolStore()
+const collectionStore = useCollectionStore()
+collectionStore.init()
+bleStore.setBuiltinDocsProvider(matchBuiltinProtocolDocs)
 const { t } = useI18n()
+
+// ── 载荷模板（控制台自由输入也支持 {{len}} {{sum}} {{变量}}）──
+function renderTemplate(text: string, mode: 'hex' | 'ascii'): { hex: string; error?: string } {
+  const r = bleStore.previewPayloadFor(text, mode)
+  return { hex: r.hex, error: r.error }
+}
+const variableNames = computed(() => {
+  void collectionStore.version
+  return Object.keys(collectionStore.variablesFor(bleStore.activeSessionId))
+})
 
 const isSending = ref(false)
 const showMoreMenu = ref(false)
@@ -414,10 +432,13 @@ const parsedProtocol = computed(() => {
   return null
 })
 
-async function handleSend(buffer: ArrayBuffer, label?: string) {
+async function handleSend(buffer: ArrayBuffer, label?: string, template?: { text: string; mode: 'hex' | 'ascii' }) {
   if (isSending.value) return
   isSending.value = true
-  try { await bleStore.sendData(buffer, true, label) }
+  try {
+    if (template) await bleStore.sendTemplate(template.text, template.mode, label)
+    else await bleStore.sendData(buffer, true, label)
+  }
   catch (e: any) { uni.showToast({ title: e.message ?? t('debug.sendFailed'), icon: 'none', duration: 2000 }) }
   finally { isSending.value = false }
 }
@@ -521,11 +542,19 @@ function handleSaveLogSample(entry: LogEntry) {
     return
   }
   uni.showActionSheet({
-    itemList: [t('command.saveAsSample'), t('command.fromLogCreate')],
+    itemList: [t('command.saveAsSample'), t('command.pairSave'), t('command.fromLogCreate')],
     success: (res) => {
       if (res.tapIndex === 0) {
         _saveSampleFromLog(entry)
       } else if (res.tapIndex === 1) {
+        const rx = findPairedRx(bleStore.logs, entry)
+        const name = `${(entry.label ?? '').replace(/^▶\s*/, '') || shortUUID(entry.characteristicUUID!)} ${formatTimestamp(entry.timestamp)}`
+        const example = exampleFromLogs(name, entry, rx)
+        if (!example) { uni.showToast({ title: t('debug.sampleSaveFailed'), icon: 'none' }); return }
+        saveExampleForDevice(bleStore.activeSessionId, bleStore.connectedDevice?.name ?? '', example)
+        commandPanelRef.value?.refresh?.()
+        uni.showToast({ title: rx ? t('command.pairSavedWithRx') : t('command.pairSavedNoRx'), icon: 'none', duration: 1800 })
+      } else if (res.tapIndex === 2) {
         fromLogTarget.value = {
           serviceUUID: entry.serviceUUID!,
           charUUID: entry.characteristicUUID!,

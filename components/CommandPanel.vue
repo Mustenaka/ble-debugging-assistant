@@ -8,6 +8,9 @@
         <view v-if="!sequenceMode" class="cp-tool-btn" @click="openNewCommand">
           <text class="cp-tool-text">＋</text>
         </view>
+        <view v-if="!sequenceMode" class="cp-tool-btn" @click="openVars">
+          <text class="cp-tool-text mono">{ }</text>
+        </view>
         <view v-if="!sequenceMode && bleStore.quickCommands.length" class="cp-tool-btn" @click="showImportModal = true">
           <text class="cp-tool-text">⇪</text>
         </view>
@@ -76,8 +79,10 @@
                       <text class="cp-op-action-text">{{ actionLabel(item.op) }}</text>
                     </view>
                     <view v-if="item.builtin" class="cp-op-builtin"><text class="cp-op-builtin-text">{{ t('command.builtinBadge') }}</text></view>
+                    <view v-if="isTemplateOp(item.op)" class="cp-op-tpl"><text class="cp-op-tpl-text">ƒ</text></view>
                   </view>
                   <text v-if="opPayloadPreview(item.op)" class="cp-op-payload mono">{{ opPayloadPreview(item.op) }}</text>
+                  <text v-if="isTemplateOp(item.op)" class="cp-op-rendered mono" :class="{ 'cp-op-rendered--error': !!renderedPreview(item.op).error }">→ {{ renderedPreview(item.op).error || renderedPreview(item.op).hex }}</text>
                   <text v-if="item.op.description" class="cp-op-desc">{{ item.op.description }}</text>
 
                   <!-- 变体 chips（点击直接执行）-->
@@ -120,10 +125,31 @@
       </view>
     </scroll-view>
 
+    <!-- Runner 选项 -->
+    <view v-if="sequenceMode && showRunnerOptions" class="cp-runner-opts">
+      <view class="cp-ro-cell">
+        <text class="cp-ro-label">{{ t('command.stepDelay') }}</text>
+        <input class="cp-ro-input mono" type="number" :value="String(runnerOpts.stepDelayMs)" @input="runnerOpts.stepDelayMs = Math.max(0, parseInt(evtValue($event)) || 0)" />
+      </view>
+      <view class="cp-ro-cell">
+        <text class="cp-ro-label">{{ t('command.loops') }}</text>
+        <input class="cp-ro-input mono" type="number" :value="String(runnerOpts.loops)" @input="runnerOpts.loops = Math.max(1, Math.min(1000, parseInt(evtValue($event)) || 1))" />
+      </view>
+      <view class="cp-ro-toggle" :class="{ 'cp-ro-toggle--on': runnerOpts.stopOnFail }" @click="runnerOpts.stopOnFail = !runnerOpts.stopOnFail">
+        <text class="cp-ro-toggle-text">{{ runnerOpts.stopOnFail ? '✓ ' : '' }}{{ t('command.stopOnFail') }}</text>
+      </view>
+      <view class="cp-ro-toggle" :class="{ 'cp-ro-toggle--on': runnerOpts.expandVariants }" @click="runnerOpts.expandVariants = !runnerOpts.expandVariants">
+        <text class="cp-ro-toggle-text">{{ runnerOpts.expandVariants ? '✓ ' : '' }}{{ t('command.expandVariants') }}</text>
+      </view>
+    </view>
+
     <!-- 序列模式底栏 -->
     <view v-if="sequenceMode" class="cp-seq-bar">
       <text class="cp-seq-info">{{ sequenceRunningText || t('command.sequenceMode') }}</text>
       <view class="cp-seq-actions">
+        <view class="cp-seq-btn cp-seq-btn--cancel" :class="{ 'cp-seq-btn--opts-on': showRunnerOptions }" @click="showRunnerOptions = !showRunnerOptions">
+          <text class="cp-seq-btn-text">⚙</text>
+        </view>
         <view class="cp-seq-btn cp-seq-btn--cancel" @click="toggleSequenceMode">
           <text class="cp-seq-btn-text">{{ t('command.sequenceExit') }}</text>
         </view>
@@ -194,6 +220,53 @@
       </view>
     </view>
 
+    <!-- 变量与环境 -->
+    <view v-if="showVars" class="cp-modal-overlay" @click="showVars = false">
+      <view class="cp-modal" :class="{ 'cp-modal--wide': isWideScreen }" @click.stop>
+        <text class="cp-modal-title">{ } {{ t('command.variablesTitle') }}</text>
+
+        <view class="cp-seq-row">
+          <text class="cp-modal-label">{{ t('command.seqLabel') }}</text>
+          <text class="cp-seq-val mono">{{ bleStore.activeSeq }}</text>
+          <view class="cp-mini-btn" @click="bleStore.resetSeq()"><text class="cp-mini-btn-text">{{ t('command.resetSeq') }}</text></view>
+        </view>
+
+        <scroll-view scroll-y class="cp-vars-scroll">
+          <view class="cp-vars-section">
+            <view class="cp-vars-hd">
+              <text class="cp-modal-label">{{ t('command.collectionVars') }}</text>
+              <view v-if="varsCollectionId" class="cp-mini-btn" @click="colVars.push({ name: '', value: '', description: '' })"><text class="cp-mini-btn-text">＋ {{ t('command.addVar') }}</text></view>
+            </view>
+            <text v-if="!varsCollectionId" class="cp-vars-hint">{{ t('command.noCollectionForVars') }}</text>
+            <view v-for="(v, i) in colVars" :key="i" class="cp-var-row">
+              <input class="cp-var-input cp-var-input--name mono" :value="v.name" :placeholder="t('command.varName')" placeholder-class="cp-ph" @input="v.name = evtValue($event)" />
+              <input class="cp-var-input mono" :value="v.value" :placeholder="t('command.varValue')" placeholder-class="cp-ph" @input="v.value = evtValue($event)" />
+              <input class="cp-var-input cp-var-input--desc" :value="v.description ?? ''" :placeholder="t('command.varDesc')" placeholder-class="cp-ph" @input="v.description = evtValue($event)" />
+              <view class="cp-var-del" @click="colVars.splice(i, 1)"><text class="cp-var-del-icon">✕</text></view>
+            </view>
+          </view>
+
+          <view class="cp-vars-section">
+            <view class="cp-vars-hd">
+              <text class="cp-modal-label">{{ t('command.deviceVars') }}</text>
+              <view class="cp-mini-btn" @click="envRows.push({ name: '', value: '' })"><text class="cp-mini-btn-text">＋ {{ t('command.addVar') }}</text></view>
+            </view>
+            <view v-for="(v, i) in envRows" :key="i" class="cp-var-row">
+              <input class="cp-var-input cp-var-input--name mono" :value="v.name" :placeholder="t('command.varName')" placeholder-class="cp-ph" @input="v.name = evtValue($event)" />
+              <input class="cp-var-input mono" :value="v.value" :placeholder="t('command.varValue')" placeholder-class="cp-ph" @input="v.value = evtValue($event)" />
+              <view class="cp-var-del" @click="envRows.splice(i, 1)"><text class="cp-var-del-icon">✕</text></view>
+            </view>
+          </view>
+          <text class="cp-vars-hint">{{ t('command.templateHint') }}</text>
+        </scroll-view>
+
+        <view class="cp-modal-actions">
+          <view class="cp-modal-btn cp-modal-btn--cancel" @click="showVars = false"><text>{{ t('common.cancel') }}</text></view>
+          <view class="cp-modal-btn cp-modal-btn--confirm" @click="saveVars"><text>{{ t('common.save') }}</text></view>
+        </view>
+      </view>
+    </view>
+
     <!-- 序列执行报告 -->
     <view v-if="showReport" class="cp-modal-overlay" @click="showReport = false">
       <view class="cp-modal" :class="{ 'cp-modal--wide': isWideScreen }" @click.stop>
@@ -224,11 +297,16 @@
 <script setup lang="ts">
 import { ref, computed, reactive, watch } from 'vue'
 import { useBleStore } from '../store/bleStore'
+import { useCollectionStore } from '../store/collectionStore'
 import { useI18n } from '../composables/useI18n'
 import { useResponsive } from '../composables/useResponsive'
 import { shortUUID, normalizeUUID } from '../utils/hex'
 import { matchBuiltinProtocolDocs } from '../services/builtinProtocolDocs'
+import { hasTemplateTokens } from '../utils/payload'
+import type { CollectionVariable } from '../utils/collection'
 import type { QuickCommand } from '../utils/buffer'
+import { loadRunnerOptions, saveRunnerOptions, buildRunPlan, shouldStopAfter, summarizeRun, type RunnerOptions } from '../utils/runner'
+import { exampleFromRun, saveExampleForDevice } from '../utils/examples'
 import {
   loadDeviceAnnotations,
   mergeAnnotationsIntoDocs,
@@ -250,13 +328,15 @@ const emit = defineEmits<{
 }>()
 
 const bleStore = useBleStore()
+const collectionStore = useCollectionStore()
+collectionStore.init()
 const { t } = useI18n()
 const { isWideScreen } = useResponsive()
 
 const deviceId = computed(() => bleStore.activeSessionId)
 const deviceName = computed(() => bleStore.activeSession?.device.name ?? '')
 
-// 数据刷新信号（保存/执行后自增）
+// 数据刷新信号（保存/执行后自增；集合被导入/编辑时也刷新）
 const refreshTick = ref(0)
 const collapsedServices = reactive<Set<string>>(new Set())
 
@@ -264,6 +344,51 @@ watch(deviceId, () => {
   collapsedServices.clear()
   refreshTick.value++
 })
+watch(() => collectionStore.version, () => { refreshTick.value++ })
+
+// ── 模板预览 ────────────────────────────────────────────────────────────────
+
+function isTemplateOp(op: OperationAnnotation): boolean {
+  return hasTemplateTokens(operationPayload(op))
+}
+
+function renderedPreview(op: OperationAnnotation): { hex: string; error?: string } {
+  void refreshTick.value
+  void collectionStore.version
+  void bleStore.activeSeq
+  return bleStore.previewPayloadFor(operationPayload(op), op.payloadMode ?? 'hex', deviceId.value)
+}
+
+// ── 变量与环境 ──────────────────────────────────────────────────────────────
+
+const showVars = ref(false)
+const varsCollectionId = ref('')
+const colVars = ref<CollectionVariable[]>([])
+const envRows = ref<{ name: string; value: string }[]>([])
+
+function evtValue(e: any): string {
+  return String(e?.detail?.value ?? '')
+}
+
+function openVars() {
+  const col = collectionStore.forDevice(deviceId.value)
+  varsCollectionId.value = col?.id ?? ''
+  colVars.value = (col?.variables ?? []).map((v) => ({ ...v }))
+  envRows.value = Object.entries(collectionStore.deviceEnv(deviceId.value)).map(([name, value]) => ({ name, value }))
+  showVars.value = true
+}
+
+function saveVars() {
+  if (varsCollectionId.value) {
+    collectionStore.setVariables(varsCollectionId.value, colVars.value.filter((v) => v.name.trim()))
+  }
+  const env: Record<string, string> = {}
+  for (const row of envRows.value) if (row.name.trim()) env[row.name.trim()] = row.value
+  collectionStore.setDeviceEnv(deviceId.value, env)
+  showVars.value = false
+  refreshTick.value++
+  uni.showToast({ title: t('command.varsSaved'), icon: 'success', duration: 1200 })
+}
 
 // ── 面板数据组装 ────────────────────────────────────────────────────────────
 
@@ -332,8 +457,17 @@ const panelServices = computed<PanelService[]>(() => {
   }
   for (const [charKey, doc] of Object.entries(builtin.charDocs)) {
     const [svcUUID, chUUID] = charKey.split('::')
+    // 同服务里的 Notify/Indicate 特征值：模板命令的默认响应通道
+    const notifyCharInService = Object.entries(builtin.charDocs)
+      .filter(([k, d]) => k.startsWith(`${svcUUID}::`) && k !== charKey && d.properties.some((p) => /NOTIFY|INDICATE/i.test(p)))
+      .map(([k]) => k.split('::')[1])[0]
     for (const api of doc.interfaces) {
       if (api.operationId && annOpIds.has(`${charKey}::${api.operationId}`)) continue
+      const request = (api.request ?? '').trim().toUpperCase()
+      if (request === 'NONE') continue // 事件型接口（设备主动上报）不是可执行命令
+      const isRead = request === 'READ'
+      const respHead = (api.responseExample ?? '').trim().split(/\s+/)[0] ?? ''
+      const hasResponse = !!(api.response && api.response.toUpperCase() !== 'NONE')
       pushOp(svcUUID, chUUID, {
         id: `builtin_${api.operationId || api.name}`,
         name: api.name,
@@ -345,9 +479,19 @@ const panelServices = computed<PanelService[]>(() => {
         responseExample: api.responseExample,
         requestFields: api.requestFields,
         responseFields: api.responseFields,
-        actionType: 'write',
+        actionType: isRead ? 'read' : 'write',
         payloadMode: 'hex',
-        payload: api.requestExample ?? '',
+        payload: api.payload || api.requestExample || '',
+        // 模板自带响应样例时默认开启判定：READ 以被读特征值判定；WRITE 以同服务 Notify 特征值 + 响应首字节判定
+        expect: hasResponse
+          ? {
+              enabled: true,
+              responseCharacteristicUUID: isRead ? '' : (notifyCharInService ?? ''),
+              matchHex: isRead ? '' : (/^[0-9A-Fa-f]{2}$/.test(respHead) ? respHead : ''),
+              timeoutMs: 2000,
+              fieldAssertions: [],
+            }
+          : undefined,
       }, true)
     }
   }
@@ -499,29 +643,42 @@ function onEditorSaved() {
   refreshTick.value++
 }
 
+function saveLastRunAsExample(item: PanelOp) {
+  const last = item.runs[0]
+  const example = last ? exampleFromRun(item.serviceUUID, item.charUUID, item.op, last) : null
+  if (!example) {
+    uni.showToast({ title: t('command.noRunToSave'), icon: 'none' }); return
+  }
+  const col = saveExampleForDevice(deviceId.value, deviceName.value, example)
+  refreshTick.value++
+  uni.showToast({ title: t('command.exampleSaved', { name: col.name }), icon: 'none', duration: 1800 })
+}
+
 function openOpActions(item: PanelOp) {
-  const actions = item.builtin
-    ? [t('command.run'), t('command.fill'), t('command.duplicate')]
-    : [t('command.run'), t('command.fill'), t('command.editCommand'), t('command.duplicate'), t('command.deleteCommand')]
-  uni.showActionSheet({
-    itemList: actions,
-    success: (res) => {
-      const idx = res.tapIndex
-      if (idx === 0) { runOp(item); return }
-      if (idx === 1) { fillFromOp(item); return }
-      if (item.builtin) {
-        if (idx === 2) duplicateOp(item)
-        return
-      }
-      if (idx === 2) {
+  const actions: { label: string; run: () => void }[] = [
+    { label: t('command.run'), run: () => { runOp(item) } },
+    { label: t('command.fill'), run: () => fillFromOp(item) },
+  ]
+  if (item.runs[0]?.requestHex || item.runs[0]?.responseHex) {
+    actions.push({ label: t('command.saveRunAsExample'), run: () => saveLastRunAsExample(item) })
+  }
+  if (!item.builtin) {
+    actions.push({
+      label: t('command.editCommand'),
+      run: () => {
         editorTarget.value = {
           serviceUUID: item.serviceUUID, charUUID: item.charUUID, lock: true,
           initial: JSON.parse(JSON.stringify(item.op)),
         }
         showOpEditor.value = true
-      } else if (idx === 3) {
-        duplicateOp(item)
-      } else if (idx === 4) {
+      },
+    })
+  }
+  actions.push({ label: t('command.duplicate'), run: () => duplicateOp(item) })
+  if (!item.builtin) {
+    actions.push({
+      label: t('command.deleteCommand'),
+      run: () => {
         uni.showModal({
           title: t('command.deleteCommand'),
           content: t('command.deleteConfirm'),
@@ -533,8 +690,12 @@ function openOpActions(item: PanelOp) {
             }
           },
         })
-      }
-    },
+      },
+    })
+  }
+  uni.showActionSheet({
+    itemList: actions.map((a) => a.label),
+    success: (res) => actions[res.tapIndex]?.run(),
   })
 }
 
@@ -616,6 +777,9 @@ const isSequenceRunning = ref(false)
 const sequenceRunningText = ref('')
 const showReport = ref(false)
 const sequenceReport = ref<{ name: string; record: OperationRunRecord }[]>([])
+const showRunnerOptions = ref(false)
+const runnerOpts = reactive<RunnerOptions>(loadRunnerOptions())
+const lastPlanTotal = ref(0)
 
 function toggleSequenceMode() {
   if (isSequenceRunning.value) return
@@ -630,14 +794,11 @@ function toggleSelect(item: PanelOp) {
 }
 
 const reportSummaryText = computed(() => {
-  const counts = { pass: 0, fail: 0, timeout: 0, error: 0 }
-  for (const r of sequenceReport.value) {
-    if (r.record.result === 'pass' || r.record.result === 'sent') counts.pass++
-    else if (r.record.result === 'fail') counts.fail++
-    else if (r.record.result === 'timeout') counts.timeout++
-    else counts.error++
-  }
-  return t('command.sequenceSummary', counts)
+  const s = summarizeRun(sequenceReport.value.map((r) => r.record), lastPlanTotal.value)
+  let text = t('command.sequenceSummary', { pass: s.pass, fail: s.fail, timeout: s.timeout, error: s.error })
+  if (s.aborted) text += ` · ${t('command.runnerAborted', { done: s.total, total: lastPlanTotal.value })}`
+  if (s.avgRttMs != null) text += ` · ${t('command.runnerAvgRtt', { ms: s.avgRttMs })}`
+  return text
 })
 
 async function runSequence() {
@@ -654,20 +815,25 @@ async function runSequence() {
   if (!items.length) {
     uni.showToast({ title: t('command.selectAtLeast'), icon: 'none' }); return
   }
+  saveRunnerOptions({ ...runnerOpts })
+  const plan = buildRunPlan(items, runnerOpts)
+  lastPlanTotal.value = plan.length
   isSequenceRunning.value = true
   const report: { name: string; record: OperationRunRecord }[] = []
   try {
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i]
-      sequenceRunningText.value = t('command.sequenceRunning', { i: i + 1, n: items.length, name: item.op.name })
-      locateOp(item)
+    for (const step of plan) {
+      sequenceRunningText.value = t('command.sequenceRunning', { i: step.index, n: plan.length, name: step.label })
+      locateOp(step.item)
       const record = await bleStore.runOperation({
-        serviceUUID: item.serviceUUID,
-        characteristicUUID: item.charUUID,
-        op: item.op,
+        serviceUUID: step.item.serviceUUID,
+        characteristicUUID: step.item.charUUID,
+        op: step.item.op,
+        payloadOverride: step.variant?.payload,
+        variantLabel: step.variant?.label,
       })
-      report.push({ name: item.op.name || item.op.operationId || '—', record })
-      await new Promise((r) => setTimeout(r, 200))
+      report.push({ name: step.label, record })
+      if (shouldStopAfter(record, runnerOpts)) break
+      if (runnerOpts.stepDelayMs > 0) await new Promise((r) => setTimeout(r, runnerOpts.stepDelayMs))
     }
   } finally {
     isSequenceRunning.value = false
@@ -780,7 +946,34 @@ async function runSequence() {
 .cp-op-builtin { padding: 0 5px; border-radius: 3px; background: rgba(var(--color-warning-rgb), 0.1); }
 .cp-op-builtin-text { font-size: 8px; font-weight: 700; color: var(--color-warning); }
 .cp-op-payload { font-size: 11px; color: var(--text-mono); }
+.cp-op-rendered { font-size: 10px; color: var(--color-accent); word-break: break-all; &--error { color: var(--color-danger); } }
+.cp-op-tpl { padding: 0 5px; border-radius: 3px; background: rgba(var(--color-accent-rgb), 0.12); }
+.cp-op-tpl-text { font-size: 9px; font-weight: 700; color: var(--color-accent); font-style: italic; }
 .cp-op-desc { font-size: 10px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 变量弹窗 */
+.cp-seq-row { display: flex; align-items: center; gap: 10px; .cp-modal-label { text-transform: none; } }
+.cp-seq-val { font-size: 14px; font-weight: 700; color: var(--color-primary); flex: 1; }
+.cp-mini-btn {
+  padding: 4px 10px; border-radius: 6px;
+  background: rgba(var(--color-primary-rgb), 0.08); border: 1px solid rgba(var(--color-primary-rgb), 0.25);
+  &:active { opacity: 0.7; }
+}
+.cp-mini-btn-text { font-size: 10px; color: var(--color-primary); font-weight: 700; }
+.cp-vars-scroll { max-height: 50vh; display: flex; flex-direction: column; }
+.cp-vars-section { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.cp-vars-hd { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cp-vars-hint { font-size: 10px; color: var(--text-dimmed); line-height: 1.5; }
+.cp-var-row { display: flex; gap: 5px; align-items: center; }
+.cp-var-input {
+  flex: 1; min-width: 0; background: var(--bg-input); border: 1px solid var(--border-default); border-radius: 7px;
+  padding: 6px 8px; font-size: 12px; color: var(--text-primary); min-height: 32px;
+  &--name { flex: 0 0 82px; color: var(--color-primary); }
+  &--desc { flex: 0 0 90px; font-size: 11px; }
+}
+.cp-ph { color: var(--text-dimmed); }
+.cp-var-del { width: 22px; height: 32px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; &:active { opacity: 0.6; } }
+.cp-var-del-icon { font-size: 11px; color: var(--color-danger); }
 
 .cp-variants { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
 .cp-variant-chip {
@@ -833,6 +1026,25 @@ async function runSequence() {
 }
 .cp-seq-btn-text { font-size: 12px; font-weight: 700; color: var(--text-secondary); }
 .cp-seq-go-text { color: #fff; }
+.cp-seq-btn--opts-on { border-color: rgba(var(--color-purple, 139,92,246), 0.6); .cp-seq-btn-text { color: var(--color-purple); } }
+
+/* Runner 选项 */
+.cp-runner-opts {
+  display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap;
+  padding: 8px 14px; background: var(--bg-panel); border-top: 1px solid var(--border-subtle); flex-shrink: 0;
+}
+.cp-ro-cell { display: flex; flex-direction: column; gap: 3px; flex: 0 0 90px; }
+.cp-ro-label { font-size: 9px; color: var(--text-dimmed); text-transform: uppercase; }
+.cp-ro-input {
+  background: var(--bg-input); border: 1px solid var(--border-default); border-radius: 7px;
+  padding: 5px 8px; font-size: 12px; color: var(--text-primary); min-height: 30px; width: 100%;
+}
+.cp-ro-toggle {
+  padding: 6px 10px; border-radius: 7px; border: 1px solid var(--border-default); background: var(--bg-input);
+  &:active { opacity: 0.7; }
+  &--on { border-color: rgba(139,92,246, 0.6); background: rgba(139,92,246, 0.1); .cp-ro-toggle-text { color: var(--color-purple); } }
+}
+.cp-ro-toggle-text { font-size: 11px; color: var(--text-muted); font-weight: 600; }
 
 /* 弹窗 */
 .cp-modal-overlay {

@@ -8,10 +8,10 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178c6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
 [![Pinia](https://img.shields.io/badge/Pinia-2.x-ffd859?style=flat-square)](https://pinia.vuejs.org/)
 [![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS-lightgrey?style=flat-square)](https://uniapp.dcloud.net.cn/)
-[![Version](https://img.shields.io/badge/Version-1.2.0-00F5FF?style=flat-square)](#)
+[![Version](https://img.shields.io/badge/Version-0.2.0-00F5FF?style=flat-square)](#)
 [![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](#)
 
-[中文文档](./README_Zh.md) · [Features](#features) · [Quick Start](#quick-start) · [Architecture](#architecture) · [Screenshots](#screenshots)
+[中文文档](./README_Zh.md) · [User Guide](./docs/USER_GUIDE.md) · [Features](#features) · [Quick Start](#quick-start) · [Architecture](#architecture) · [Screenshots](#screenshots)
 
 </div>
 
@@ -48,6 +48,16 @@ The app ships with two display themes (Dark / Light) and full bilingual support 
 - **MTU Negotiation** — Negotiate MTU size (23–512 bytes) per device with real-time feedback
 - **Multi-Device Simultaneous Debugging** — Connect and debug multiple BLE devices at the same time; each device has its own isolated log buffer, service tree, and communication state
 
+### Postman-style Workflow
+- **Protocol Collections** — Services, characteristics, runnable operations, variables, examples, and a device-topology snapshot live in a Collection that is decoupled from the device instance. Collections auto-match devices by service-UUID fingerprint (plus an optional name rule) or by explicit binding, and can be shared as `collection.json`
+- **Import & Merge** — Import `collection.json`, `protocol.json`, a Debug Pack `.zip`, or legacy annotations from paste / clipboard / file picker (H5 and Android); create a new collection or merge with "keep local" / "overwrite" strategy. Export a Debug Pack, let an AI fill in `collection.json`, import it back
+- **Collection Detail** — Open any collection to inspect its fingerprint and topology snapshot, edit variables in place, edit or delete operations, and rename / annotate / delete paired examples
+- **Payload Templates & Variables** — `{{len}}`, `{{len:-2}}`, `{{seq}}`, `{{sum}}`, `{{xor}}`, `{{crc8}}`, `{{crc16}}`, `{{crc16ccitt}}`, `{{variable}}`, `{{variable:u16le}}` in operations, variants, and the console input, with live rendered preview; collection-level variables plus per-device overrides
+- **Typed Field Decoding** — Field tables use real types (`u8`, `u16le`, `i16be`, `f32le`, `ascii`, `bytes`, `bitmask`, …); RX/TX logs show decoded `name=value` chips, and assertions compare decoded fields (`==`, `>`, `in`, `range`, …)
+- **Runner** — Sequence runs with step delay, stop-on-fail, loop count, and variant expansion, plus a report with pass rate and average RTT
+- **Paired Examples** — Save a TX log with its auto-matched RX, or a command's last run, as a request/response example that feeds docs, the operation editor, and the mock device
+- **Mock Mode** — A built-in demo device and one mock device per collection appear in scan results; every BLE call is routed to an in-app provider so the full flow works without hardware (also on H5)
+
 ### Developer Experience
 - **Quick Commands** — Save frequently used payloads as Postman-like command cards with name, type, description, content, and content format; long-press to delete
 - **Communication Log** — Timestamped, color-coded TX/RX/SYS entries with 2000-entry ring buffer; fully isolated per connected device
@@ -71,11 +81,19 @@ The app ships with two display themes (Dark / Light) and full bilingual support 
 
 ## Screenshots
 
-> _Dark theme on the left · Light theme on the right_
+Taken on an Android phone. The full walkthrough with every screen is in the [User Guide](./docs/USER_GUIDE.md).
 
-| Scan | Device Overview | Debug Console |
-|------|----------------|---------------|
-| Radar animation, RSSI bars, connected badges | Multi-device tree · MTU panel · RSSI chart | Device tabs · HEX/ASCII I/O · log panel · protocol parser |
+| Scan (demo entry) | Console: decoded RX | Command panel |
+|---|---|---|
+| <img src="docs/screenshots/01-scan-demo-entry.png" width="230"> | <img src="docs/screenshots/03-console-decoded.png" width="230"> | <img src="docs/screenshots/06-commands-panel.png" width="230"> |
+
+| Operation editor (templates) | Runner report | Workspace |
+|---|---|---|
+| <img src="docs/screenshots/07-operation-editor-template.png" width="230"> | <img src="docs/screenshots/12-runner-report.png" width="230"> | <img src="docs/screenshots/13-workspace.png" width="230"> |
+
+| Collections | Import a Debug Pack zip | Collection detail |
+|---|---|---|
+| <img src="docs/screenshots/15-collections.png" width="230"> | <img src="docs/screenshots/16-import-zip-preview.png" width="230"> | <img src="docs/screenshots/17-collection-detail.png" width="230"> |
 
 ---
 
@@ -85,12 +103,12 @@ The app ships with two display themes (Dark / Light) and full bilingual support 
 |-------|-----------|
 | Framework | UniApp (Vue 3 + `<script setup>`) |
 | Language | TypeScript 5 |
-| State Management | Pinia 2 — `bleStore` (sessions + adapter) · `appStore` (theme/locale) · `protocolStore` (plugins) |
-| BLE API | UniApp native BLE APIs — Promise-wrapped, per-device state machine |
+| State Management | Pinia 2 — `bleStore` (sessions + adapter + runner) · `collectionStore` (collections/variables/examples) · `appStore` (theme/locale/mock mode) · `protocolStore` (plugins) |
+| BLE API | UniApp native BLE APIs — Promise-wrapped, per-device state machine; `mock:` device IDs routed to `services/mockBle.ts` |
 | Styling | Scoped SCSS + CSS Custom Properties (dual theme via `.theme-dark` / `.theme-light` classes) |
 | Responsive Layout | `useResponsive` composable — `LeftTabBar` component for ≥768 px; native bottom tab bar for narrow screens |
 | i18n | Custom `useI18n` composable (dot-notation keys, reactive locale switching) |
-| Storage | `uni.setStorageSync` for settings, quick commands, plugins & device pins |
+| Storage | `uni.setStorageSync` for settings, collections (`ble_collections`), device env, quick commands, plugins, device pins, session archive & run history |
 
 ---
 
@@ -151,7 +169,9 @@ uniapp-ble-debugging-assistant/
 │   ├── scan/index.vue          # Device scan page — finds devices, marks already-connected ones
 │   ├── device/index.vue        # Multi-device tree overview — all sessions' services & characteristics
 │   ├── debug/index.vue         # BLE debug console — DeviceTabBar + per-session log & send panel
-│   └── protocol/index.vue      # Protocol plugin management (add / edit / enable)
+│   ├── protocol/index.vue      # Collections & Plugins — collection list, import (json / zip), parser plugins
+│   ├── collection/index.vue    # Collection detail — topology, variables, operations, examples
+│   └── history/index.vue       # Transfer history — per-device session archive & timeline
 │
 ├── components/
 │   ├── DeviceTabBar.vue         # Horizontal tab bar for switching between connected device sessions
@@ -162,13 +182,20 @@ uniapp-ble-debugging-assistant/
 │   ├── RssiChart.vue            # Live RSSI bar chart (connected device signal history)
 │   ├── DiffModal.vue            # Characteristic value history with byte-level diff highlight
 │   ├── LeftTabBar.vue           # Fixed 60 px left sidebar for ≥768 px screens
-│   └── SettingsPanel.vue        # Bottom-sheet: theme & language switcher
+│   ├── SettingsPanel.vue        # Bottom-sheet: theme, language, Demo / Mock mode
+│   ├── CommandPanel.vue         # Postman-style command panel (run / variables / runner / examples)
+│   ├── OperationEditor.vue      # Operation editor (payload templates, expectations, assertions, variants)
+│   ├── AnnotationEditor.vue     # Service / endpoint doc editor
+│   ├── FieldTable.vue           # Typed field table editor
+│   ├── HeartbeatPanel.vue       # Heartbeat soak test
+│   └── PinInputModal.vue        # Device PIN configuration
 │
 ├── services/
 │   ├── bleManager.ts            # BLE abstraction layer
 │                                #   Adapter state machine: UNINITIALIZED → IDLE ↔ SCANNING
 │                                #   Per-device state: Map<deviceId, CONNECTING|CONNECTED|DISCONNECTED>
 │                                #   + getRSSI(deviceId)  + negotiateMTU(deviceId, mtu)
+│   ├── mockBle.ts               # Mock BLE provider: demo device + collection-derived mock devices
 │   └── builtinProtocolDocs.ts   # Loads built-in Markdown protocol templates and exposes match helpers
 │
 ├── store/
@@ -176,7 +203,8 @@ uniapp-ble-debugging-assistant/
 │   │                            #   sessions: Map<deviceId, DeviceSession>  ← isolated per device
 │   │                            #   activeSessionId: string                  ← drives debug page
 │   │                            #   + adapter state (scannedDevices, scanning, filters)
-│   ├── appStore.ts              # App settings state (theme, locale, CSS variables)
+│   ├── appStore.ts              # App settings state (theme, locale, mock mode, CSS variables)
+│   ├── collectionStore.ts       # Reactive shell over utils/collection.ts (collections, variables, examples)
 │   └── protocolStore.ts         # Protocol plugin registry (add / run / persist)
 │
 ├── composables/
@@ -189,11 +217,24 @@ uniapp-ble-debugging-assistant/
 │
 ├── utils/
 │   ├── hex.ts                   # HEX↔ArrayBuffer, ASCII, UUID, RSSI utilities
-│   ├── buffer.ts                # Log entries, ring buffer, TXT/CSV export, persistence, saved samples
-│   └── protocolDocs.ts          # Markdown protocol parser + AI report / protocol JSON / mock JSON builders
+│   ├── buffer.ts                # Log entries, ring buffer, file save / share, quick commands, samples, PINs
+│   ├── collection.ts            # Collection model: fingerprint matching, binding, migration, import / merge
+│   ├── payload.ts               # Payload template engine ({{len}} {{seq}} {{sum}} {{crc16}} {{var}})
+│   ├── fields.ts                # Field type system: decode / encode / field assertions
+│   ├── runner.ts                # Sequence runner options and plan
+│   ├── examples.ts              # Request / response example pairing
+│   ├── zipReader.ts             # Minimal zip reader (store + deflate) for Debug Pack import
+│   ├── importFile.ts            # File pickers (H5 / Android) and import source resolution
+│   ├── deviceArchive.ts         # Session archive, operation run history, doc merge chain
+│   ├── heartbeat.ts             # Heartbeat config & runtime
+│   ├── exporters.ts             # Debug Pack generators (PROTOCOL.md, protocol.json, SESSION_LOG.md, AI_PROMPT.md, mock.json, collection.json)
+│   └── protocolDocs.ts          # Markdown protocol parser + endpoint catalog builders
 │
 ├── docs/
-│   └── protocols/               # Human-previewable Markdown protocol templates used by the app
+│   ├── protocols/               # Human-previewable Markdown protocol templates used by the app
+│   ├── screenshots/             # Device screenshots used by the user guide
+│   ├── USER_GUIDE.md            # User guide (English)
+│   └── USER_GUIDE_zh.md         # User guide (Chinese)
 │
 ├── scripts/
 │   └── preview-protocol-docs.mjs # Local protocol-template preview command (`npm run docs:protocol`)

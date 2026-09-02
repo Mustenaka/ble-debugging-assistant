@@ -451,7 +451,8 @@ function rttBarHeight(rtt: number): number {
 
 .hb-panel {
   width: 100%;
-  max-height: 84vh;
+  /* 定高（而非 max-height）：flex 子项 scroll-view 的 100% 高度才能解析，内容才可滚动 */
+  height: 84%;
   background: var(--bg-card);
   border: 1px solid var(--border-default);
   border-radius: 18px 18px 0 0;

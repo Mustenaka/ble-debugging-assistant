@@ -45,6 +45,18 @@ import {
   type HeartbeatConfig,
   type HeartbeatRuntime,
 } from '../utils/heartbeat'
+import {
+  registerDeviceContext,
+  registerDeviceCharacteristics,
+  syncCollectionTopology,
+  resolveVariables,
+  collectionsVersion,
+  loadDeviceAnnotations,
+} from '../utils/collection'
+import { mergeAnnotationsIntoDocs } from '../utils/deviceArchive'
+import type { MatchedProtocolDocs, ProtocolFieldDoc } from '../utils/protocolDocs'
+import { hasTemplateTokens, renderPayloadTemplate, renderAsciiTemplate, previewPayload, type RenderContext } from '../utils/payload'
+import { checkFieldAssertions, decodeFields, decodedToLogFields, hexToBytes } from '../utils/fields'
 
 export type DisplayMode = 'hex' | 'ascii'
 
@@ -86,7 +98,15 @@ export interface DeviceSession {
   pendingOpRun: PendingOpRun | null
   /** 命令执行互斥：从进入 runOperation 到判定结束（含 await 间隙） */
   opRunBusy: boolean
+  /** 模板 {{seq}} 序号（每次含 seq 的发送后自增） */
+  seq: number
+  /** 合并文档缓存（内置模板 + 集合注释），用于 RX 自动解码 */
+  docsCache: { version: number; svcCount: number; docs: MatchedProtocolDocs } | null
 }
+
+/** 内置协议模板匹配器（由页面层注入，避免 store 直接依赖 .md?raw 资源） */
+type BuiltinDocsProvider = (serviceUUIDs: string[]) => MatchedProtocolDocs
+let builtinDocsProvider: BuiltinDocsProvider = () => ({ profiles: [], serviceDocs: {}, charDocs: {} })
 
 function createSession(device: BleDevice): DeviceSession {
   return {
@@ -112,6 +132,8 @@ function createSession(device: BleDevice): DeviceSession {
     heartbeat: reactive(createHeartbeatRuntime()),
     pendingOpRun: null,
     opRunBusy: false,
+    seq: 0,
+    docsCache: null,
   }
 }
 
@@ -190,6 +212,7 @@ export const useBleStore = defineStore('ble', () => {
   })
 
   const activeHeartbeat = computed<HeartbeatRuntime | null>(() => activeSession.value?.heartbeat ?? null)
+  const activeSeq = computed(() => activeSession.value?.seq ?? 0)
 
   // ── 内部辅助：获取可写会话 ───────────────────────────────────────────────
 
@@ -234,8 +257,10 @@ export const useBleStore = defineStore('ble', () => {
         serviceUUID: serviceId,
         characteristicUUID: characteristicId,
       }
+      const pendingOp = session.pendingOpRun?.op ?? null
       const consumedByOpRun = _matchOpRunResponse(deviceId, session, characteristicId, hex, entry)
       if (!consumedByOpRun) _matchHeartbeatAck(deviceId, session, characteristicId, hex, entry)
+      _decodeRxEntry(deviceId, session, serviceId, characteristicId, entry, consumedByOpRun ? pendingOp : null)
       session.logBuffer.push(entry)
       session.logs = session.logBuffer.getAll()
       recordSessionLog(deviceId, entry)
@@ -302,6 +327,7 @@ export const useBleStore = defineStore('ble', () => {
       sessions.value.set(device.deviceId, session)
       activeSessionId.value = device.deviceId
       beginSessionRecord(device.deviceId, device.name)
+      registerDeviceContext(device.deviceId, { name: device.name })
       triggerSessionUpdate()
 
       saveRecentDevice({ deviceId: device.deviceId, name: device.name, lastConnected: Date.now() })
@@ -354,6 +380,13 @@ export const useBleStore = defineStore('ble', () => {
     const svcs = await bleManager.getServices(deviceId)
     session.services = svcs
     session.characteristics = new Map()
+    // 登记设备上下文：集合按服务指纹匹配，拓扑快照供 Mock/文档使用
+    registerDeviceContext(deviceId, {
+      name: session.device.name,
+      serviceUUIDs: svcs.map((s) => s.uuid),
+      topology: svcs.map((s) => ({ uuid: s.uuid, isPrimary: s.isPrimary, characteristics: [] })),
+    })
+    syncCollectionTopology(deviceId)
     triggerSessionUpdate()
   }
 
@@ -364,6 +397,17 @@ export const useBleStore = defineStore('ble', () => {
     const chars = await bleManager.getCharacteristics(id, serviceId)
     session.characteristics.set(serviceId, chars)
     session.activeServiceId = serviceId
+    registerDeviceCharacteristics(id, serviceId, chars.map((c) => ({
+      uuid: c.uuid,
+      properties: [
+        c.properties.read ? 'READ' : '',
+        c.properties.write ? 'WRITE' : '',
+        c.properties.writeNoResponse ? 'WRITE_NR' : '',
+        c.properties.notify ? 'NOTIFY' : '',
+        c.properties.indicate ? 'INDICATE' : '',
+      ].filter(Boolean),
+    })))
+    syncCollectionTopology(id)
     triggerSessionUpdate()
   }
 
@@ -417,6 +461,15 @@ export const useBleStore = defineStore('ble', () => {
     session.logs = session.logBuffer.getAll()
     recordSessionLog(deviceId, entry)
     triggerSessionUpdate()
+  }
+
+  /** 控制台自由输入的模板发送：渲染（消耗 seq）后走 sendData */
+  async function sendTemplate(text: string, mode: 'hex' | 'ascii', label?: string) {
+    const session = getActiveSessionMut()
+    if (!session) throw new Error('未选择发送目标')
+    const materialized = _materializePayload(text, mode, session)
+    if ('error' in materialized) throw new Error(materialized.error)
+    await sendData(materialized.buf, true, label)
   }
 
   // ── 日志操作 ──────────────────────────────────────────────────────────────
@@ -502,24 +555,117 @@ export const useBleStore = defineStore('ble', () => {
     return s.replace(/[^0-9A-Fa-f]/g, '').toUpperCase()
   }
 
-  // ── 命令执行引擎（Runnable Operation，Postman 式）─────────────────────────
+  // ── 模板 / 变量 / 解码 ────────────────────────────────────────────────────
 
-  /** 字段级断言：响应 offset 处的字节序列应等于 hexValue；返回失败原因或 null */
-  function _checkFieldAssertions(responseHex: string, op: OperationAnnotation): string | null {
-    const assertions = op.expect?.fieldAssertions ?? []
-    if (!assertions.length) return null
-    const bytes = _cleanHexStr(responseHex).match(/.{2}/g) ?? []
-    for (const a of assertions) {
-      const expected = _cleanHexStr(a.hexValue).match(/.{2}/g) ?? []
-      if (!expected.length) continue
-      for (let i = 0; i < expected.length; i++) {
-        const actual = bytes[a.offset + i]
-        if (actual !== expected[i]) {
-          return `offset ${a.offset + i}: expect ${expected[i]} got ${actual ?? '∅'}`
-        }
+  function setBuiltinDocsProvider(fn: BuiltinDocsProvider) {
+    builtinDocsProvider = fn
+    sessions.value.forEach((s) => { s.docsCache = null })
+  }
+
+  /** 内置模板 + 集合注释 合并后的文档（按集合版本与服务数缓存） */
+  function docsForDevice(deviceId: string): MatchedProtocolDocs {
+    const session = getSession(deviceId)
+    const empty: MatchedProtocolDocs = { profiles: [], serviceDocs: {}, charDocs: {} }
+    if (!session) return empty
+    const version = collectionsVersion()
+    const svcCount = session.services.length
+    if (session.docsCache && session.docsCache.version === version && session.docsCache.svcCount === svcCount) {
+      return session.docsCache.docs
+    }
+    const builtin = builtinDocsProvider(session.services.map((s) => s.uuid))
+    const docs = mergeAnnotationsIntoDocs(builtin, loadDeviceAnnotations(deviceId))
+    session.docsCache = { version, svcCount, docs }
+    return docs
+  }
+
+  function renderContextFor(deviceId?: string): RenderContext {
+    const id = deviceId ?? activeSessionId.value
+    return { variables: id ? resolveVariables(id) : {}, seq: getSession(id)?.seq ?? 0 }
+  }
+
+  /** UI 预览：渲染模板但不消耗序号 */
+  function previewPayloadFor(text: string, mode: 'hex' | 'ascii', deviceId?: string) {
+    return previewPayload(text, mode, renderContextFor(deviceId))
+  }
+
+  function resetSeq(deviceId?: string) {
+    const session = getSession(deviceId ?? activeSessionId.value)
+    if (session) {
+      session.seq = 0
+      triggerSessionUpdate()
+    }
+  }
+
+  /** 把载荷文本（可含模板）渲染为字节；含 {{seq}} 时消耗一个序号 */
+  function _materializePayload(
+    text: string,
+    mode: 'hex' | 'ascii',
+    session: DeviceSession,
+  ): { buf: ArrayBuffer } | { error: string } {
+    const ctx = renderContextFor(session.device.deviceId)
+    if (mode === 'ascii') {
+      const rendered = hasTemplateTokens(text) ? renderAsciiTemplate(text, ctx) : text
+      if (hasTemplateTokens(text) && /\{\{\s*seq\s*\}\}/i.test(text)) session.seq = (session.seq + 1) & 0xffff
+      try {
+        return { buf: asciiToBuf(rendered) }
+      } catch {
+        return { error: 'invalid-payload' }
       }
     }
-    return null
+    if (!hasTemplateTokens(text)) {
+      try {
+        return { buf: hexToBuf(text) }
+      } catch {
+        return { error: 'invalid-payload' }
+      }
+    }
+    const r = renderPayloadTemplate(text, ctx)
+    if (!r.ok) return { error: `template: ${r.error ?? 'render failed'}` }
+    if (r.usesSeq) session.seq = (session.seq + 1) & 0xffff
+    return { buf: r.bytes.buffer.slice(r.bytes.byteOffset, r.bytes.byteOffset + r.bytes.byteLength) as ArrayBuffer }
+  }
+
+  function _attachDecoded(entry: LogEntry, hex: string, fields: ProtocolFieldDoc[] | undefined) {
+    if (!fields?.length) return
+    try {
+      const decoded = decodeFields(hexToBytes(hex), fields)
+      if (decoded.length) entry.decodedFields = decodedToLogFields(decoded)
+    } catch { /* 解码失败不影响日志 */ }
+  }
+
+  /** RX 自动解码：优先用刚判定的命令响应字段表，否则查合并文档里该特征值的接口定义 */
+  function _decodeRxEntry(
+    deviceId: string,
+    session: DeviceSession,
+    serviceId: string,
+    characteristicId: string,
+    entry: LogEntry,
+    matchedOp: OperationAnnotation | null,
+  ) {
+    if (matchedOp) {
+      _attachDecoded(entry, entry.hex, matchedOp.responseFields)
+      return
+    }
+    const docs = docsForDevice(deviceId)
+    const charDoc = docs.charDocs[`${normalizeUUID(serviceId)}::${normalizeUUID(characteristicId)}`]
+    if (!charDoc) return
+    const candidates = charDoc.interfaces.filter((api) => api.responseFields?.length)
+    if (!candidates.length) return
+    const first = _cleanHexStr(entry.hex).slice(0, 2)
+    const byExample = candidates.find((api) => {
+      const ex = _cleanHexStr(api.responseExample ?? '')
+      return ex && ex.slice(0, 2) === first
+    })
+    const api = byExample ?? candidates[0]
+    _attachDecoded(entry, entry.hex, api.responseFields)
+    if (!entry.operationId) entry.operationId = api.operationId || api.name
+  }
+
+  // ── 命令执行引擎（Runnable Operation，Postman 式）─────────────────────────
+
+  /** 字段级断言（偏移字节 / 字段表解码比较）；返回失败原因或 null */
+  function _checkFieldAssertions(responseHex: string, op: OperationAnnotation): string | null {
+    return checkFieldAssertions(responseHex, op)
   }
 
   function _finishOpRun(deviceId: string, session: DeviceSession, record: OperationRunRecord) {
@@ -659,15 +805,12 @@ export const useBleStore = defineStore('ble', () => {
         return record
       }
 
-      // WRITE / WRITE_NR 动作
+      // WRITE / WRITE_NR 动作（载荷支持 {{len}} {{sum}} {{seq}} {{变量}} 模板）
       const payloadStr = (params.payloadOverride ?? '').trim() || operationPayload(op)
       if (!payloadStr) return fail('error', 'empty-payload')
-      let buf: ArrayBuffer
-      try {
-        buf = (op.payloadMode ?? 'hex') === 'hex' ? hexToBuf(payloadStr) : asciiToBuf(payloadStr)
-      } catch {
-        return fail('error', 'invalid-payload')
-      }
+      const materialized = _materializePayload(payloadStr, op.payloadMode ?? 'hex', session)
+      if ('error' in materialized) return fail('error', materialized.error)
+      const buf = materialized.buf
       const requestHex = bufToHex(buf)
 
       const promise = _armOpExpectation(id, session, runKey, op, requestHex, params.serviceUUID, params.characteristicUUID, params.variantLabel)
@@ -697,6 +840,7 @@ export const useBleStore = defineStore('ble', () => {
         characteristicUUID: params.characteristicUUID,
         operationId: op.operationId || op.id,
       }
+      _attachDecoded(entry, requestHex, op.requestFields)
       session.logBuffer.push(entry)
       session.logs = session.logBuffer.getAll()
       recordSessionLog(id, entry)
@@ -1074,8 +1218,14 @@ export const useBleStore = defineStore('ble', () => {
     activeCharacteristics,
     activeCharacteristic,
     activeHeartbeat,
+    activeSeq,
     // actions
     init,
+    setBuiltinDocsProvider,
+    docsForDevice,
+    previewPayloadFor,
+    resetSeq,
+    sendTemplate,
     onAppBackground,
     onAppForeground,
     startScan,

@@ -1,5 +1,7 @@
 # BLE Postman Workflow Redesign
 
+> 状态（0.2.0）：本文提出的 Endpoint 工作台、请求-响应样例配对、导出整理页、AI Prompt Builder、Mock Mode、协议库回写（Collection 导入）均已落地，逐界面说明见 [USER_GUIDE_zh.md](./USER_GUIDE_zh.md)。
+
 这份文档用于重新梳理 `uniapp-ble-debugging-assistant` 的产品主线：从“串口式 BLE 调试工具”升级为“Postman / Apifox 式、AI Prompt / Mock 数据友好的 BLE 接口调试软件”。
 
 ## 一句话定位

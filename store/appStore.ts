@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
+import { isMockModeEnabled, setMockModeEnabled } from '../services/mockBle'
+import { bleManager } from '../services/bleManager'
 
 export type Theme = 'dark' | 'light'
 export type Locale = 'zh' | 'en'
@@ -120,6 +122,14 @@ export const useAppStore = defineStore('app', () => {
   const theme = ref<Theme>(savedTheme)
   const locale = ref<Locale>(savedLocale)
 
+  // 演示 / Mock 模式（扫描结果中加入虚拟设备）
+  const mockMode = ref<boolean>(isMockModeEnabled())
+  function setMockMode(on: boolean) {
+    mockMode.value = on
+    setMockModeEnabled(on)
+    try { bleManager.refreshMockDevices() } catch { /* 适配器未初始化时忽略 */ }
+  }
+
   // App 版本号（来自 manifest.json 的 versionName，经系统信息读取，全端一致）
   const appVersion = ref('')
   try {
@@ -193,6 +203,8 @@ export const useAppStore = defineStore('app', () => {
     theme,
     locale,
     appVersion,
+    mockMode,
+    setMockMode,
     themeClass,
     isDark,
     vars,
