@@ -105,7 +105,7 @@
           </view>
         </view>
 
-        <view style="height: 20px;" />
+        <view class="safe-bottom-spacer" />
       </scroll-view>
 
       <!-- 操作编辑：统一命令编辑器（return 模式，不落库，保存回本地列表） -->
@@ -279,6 +279,7 @@ function handleSaveMain() {
   display: flex; flex-direction: column;
   overflow: hidden;
   box-shadow: var(--shadow-card);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 
   &--wide {
     max-width: 640px;
@@ -402,6 +403,8 @@ function handleSaveMain() {
   }
 }
 .ae-btn-text { font-size: 15px; font-weight: 700; }
+
+.safe-bottom-spacer { height: calc(20px + env(safe-area-inset-bottom, 16px)); flex-shrink: 0; }
 
 .mono { font-family: 'Courier New', monospace; }
 </style>

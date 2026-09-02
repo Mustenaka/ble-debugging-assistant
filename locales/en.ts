@@ -62,7 +62,6 @@ export const en: I18nKeys = {
     connected: 'Connected',
     disconnected: 'Disconnected',
     appName: 'BLE Debugger',
-    version: 'v1.0',
   },
 
   scan: {

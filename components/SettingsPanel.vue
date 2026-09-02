@@ -125,7 +125,7 @@
             <text class="about-app-name">{{ t('status.appName') }}</text>
             <text class="about-desc">{{ t('settings.aboutContent') }}</text>
           </view>
-          <text class="about-version">{{ t('status.version') }}</text>
+          <text class="about-version">{{ appStore.appVersion }}</text>
         </view>
       </view>
 

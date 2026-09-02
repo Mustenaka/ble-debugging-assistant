@@ -60,7 +60,6 @@ export const zh = {
     connected: '已连接',
     disconnected: '已断开',
     appName: 'BLE 调试助手',
-    version: 'v1.0',
   },
 
   scan: {

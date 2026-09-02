@@ -116,7 +116,7 @@
             </view>
           </view>
         </view>
-        <view style="height: 12px;" />
+        <view class="safe-bottom-spacer" />
       </view>
     </scroll-view>
 
@@ -819,6 +819,7 @@ async function runSequence() {
 .cp-seq-bar {
   display: flex; align-items: center; gap: 10px;
   padding: 10px 14px; background: var(--bg-panel);
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border-subtle); flex-shrink: 0;
 }
 .cp-seq-info { flex: 1; font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -911,6 +912,8 @@ async function runSequence() {
 .cp-result--timeout { color: var(--color-warning); }
 .cp-report-line { display: block; font-size: 10px; color: var(--text-muted); margin-top: 3px; word-break: break-all; }
 .cp-report-reason { display: block; font-size: 10px; color: var(--color-danger); margin-top: 2px; }
+
+.safe-bottom-spacer { height: calc(12px + env(safe-area-inset-bottom, 0px)); flex-shrink: 0; }
 
 .mono { font-family: 'Courier New', monospace; }
 </style>

@@ -536,7 +536,7 @@ function rssiRangeText(meta: SessionMeta): string {
 .hp-detail { flex: 1; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
 
 /* ── 设备分组 ── */
-.device-groups { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+.device-groups { display: flex; flex-direction: column; gap: 10px; padding: 12px; padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
 .device-group {
   background: var(--bg-panel);
   border-radius: 12px;
@@ -707,7 +707,7 @@ function rssiRangeText(meta: SessionMeta): string {
 .hex-rx { color: var(--data-hex-rx); }
 .le-ascii { display: block; font-size: 10px; color: var(--text-muted); margin-top: 2px; word-break: break-all; }
 
-.detail-bottom-space { height: 24px; }
+.detail-bottom-space { height: calc(24px + env(safe-area-inset-bottom, 0px)); }
 
 .mono { font-family: 'Courier New', monospace; }
 </style>

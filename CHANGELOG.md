@@ -4,6 +4,11 @@ All notable changes to this project are documented here.
 
 ## 2026-09-02
 
+### Fixed
+
+- Bottom-sheet editors (operation/annotation/heartbeat), the command panel, the debug send area, and the history page now pad for the system navigation bar (`safe-area-inset-bottom`), so the save button is no longer hidden behind it and lists scroll fully into view.
+- The app version shown on the Scan page chip and in Settings → About now follows `manifest.json`'s `versionName` at runtime instead of a hardcoded "v1.0".
+
 ### Added
 
 - Made operations runnable, Postman-style: each operation now carries an action (WRITE / WRITE NR / READ), an executable payload (HEX/ASCII), and an optional expected response (response characteristic, HEX prefix match, timeout) that judges every run as PASS / FAIL / TIMEOUT. Notify is enabled automatically on the response characteristic when needed, and every run is logged and persisted (last 10 per operation).

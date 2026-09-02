@@ -234,6 +234,7 @@
           </view>
         </view>
 
+        <view class="safe-bottom-spacer" />
       </scroll-view>
     </view>
   </view>
@@ -450,13 +451,14 @@ function rttBarHeight(rtt: number): number {
 
 .hb-panel {
   width: 100%;
-  max-height: 82vh;
+  max-height: 84vh;
   background: var(--bg-card);
   border: 1px solid var(--border-default);
   border-radius: 18px 18px 0 0;
   display: flex; flex-direction: column;
   overflow: hidden;
   box-shadow: var(--shadow-card);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 
   &--wide {
     max-width: 540px;
@@ -635,6 +637,8 @@ function rttBarHeight(rtt: number): number {
   }
 }
 .hb-btn-text { font-size: 15px; font-weight: 700; }
+
+.safe-bottom-spacer { height: calc(16px + env(safe-area-inset-bottom, 16px)); flex-shrink: 0; }
 
 .mono { font-family: 'Courier New', monospace; }
 </style>

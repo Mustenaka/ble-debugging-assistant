@@ -668,6 +668,7 @@ function stopHeartbeatFromStrip() {
 .send-panel {
   background: var(--bg-panel); border-top: 1px solid var(--border-subtle);
   padding: 14px; display: flex; flex-direction: column; gap: 12px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
   overflow-y: auto; max-height: 55vh;
   &--wide { flex: 45; max-height: 100vh; border-top: none; border-left: 1px solid var(--border-subtle); min-width: 280px; }
 }

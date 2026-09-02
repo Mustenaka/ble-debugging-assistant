@@ -235,7 +235,7 @@
           <view class="oe-btn oe-btn--save" @click="handleSave">
             <text class="oe-btn-text">{{ t('common.save') }}</text>
           </view>
-          <view style="height: 16px;" />
+          <view class="safe-bottom-spacer" />
         </view>
       </scroll-view>
     </view>
@@ -469,13 +469,14 @@ function handleSave() {
 
 .oe-panel {
   width: 100%;
-  max-height: 90vh;
+  max-height: 88vh;
   background: var(--bg-card);
   border: 1px solid var(--border-default);
   border-radius: 18px 18px 0 0;
   display: flex; flex-direction: column;
   overflow: hidden;
   box-shadow: var(--shadow-card);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 
   &--wide {
     max-width: 640px;
@@ -639,6 +640,8 @@ function handleSave() {
   }
 }
 .oe-btn-text { font-size: 15px; font-weight: 700; }
+
+.safe-bottom-spacer { height: calc(20px + env(safe-area-inset-bottom, 16px)); flex-shrink: 0; }
 
 .mono { font-family: 'Courier New', monospace; }
 </style>

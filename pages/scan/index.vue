@@ -17,7 +17,7 @@
             <text class="status-text">{{ stateLabel }}</text>
           </view>
           <view class="status-right">
-            <text class="version-chip">{{ t('status.version') }}</text>
+            <text v-if="appStore.appVersion" class="version-chip">{{ appStore.appVersion }}</text>
             <!-- 语言快切 -->
             <view class="lang-quick-btn" @click="appStore.toggleLocale()">
               <text class="lang-quick-text">{{ appStore.locale === 'zh' ? 'EN' : '中' }}</text>

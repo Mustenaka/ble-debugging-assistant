@@ -120,6 +120,13 @@ export const useAppStore = defineStore('app', () => {
   const theme = ref<Theme>(savedTheme)
   const locale = ref<Locale>(savedLocale)
 
+  // App 版本号（来自 manifest.json 的 versionName，经系统信息读取，全端一致）
+  const appVersion = ref('')
+  try {
+    const info = uni.getSystemInfoSync() as any
+    if (info?.appVersion) appVersion.value = `v${info.appVersion}`
+  } catch { /* 保持空串 */ }
+
   // 计算 CSS class
   const themeClass = computed(() => `theme-${theme.value}`)
   const isDark = computed(() => theme.value === 'dark')
@@ -185,6 +192,7 @@ export const useAppStore = defineStore('app', () => {
   return {
     theme,
     locale,
+    appVersion,
     themeClass,
     isDark,
     vars,
