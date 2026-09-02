@@ -25,13 +25,6 @@ The long-term product direction is to make BLE debugging feel closer to **Postma
 
 The app ships with two display themes (Dark / Light) and full bilingual support (Chinese / English), switchable at any time without restarting.
 
-<div style="display: flex; flex-wrap: wrap; gap: 10px; max-width: 420px;">
-  <img src="./docs/pics/1.jpg" width="200"/>
-  <img src="./docs/pics/4.jpg" width="200"/>
-  <img src="./docs/pics/2.jpg" width="200"/>
-  <img src="./docs/pics/3.jpg" width="200"/>
-</div>
-
 ---
 
 ## Features
@@ -81,19 +74,15 @@ The app ships with two display themes (Dark / Light) and full bilingual support 
 
 ## Screenshots
 
-Taken on an Android phone. The full walkthrough with every screen is in the [User Guide](./docs/USER_GUIDE.md).
+Android screenshots captured on September 2, 2026, showing five main screens with the Chinese interface. See the [User Guide](./docs/USER_GUIDE.md) or [Chinese Wiki guide](https://github.com/Mustenaka/ble-debugging-assistant/wiki/中文使用说明书) for detailed instructions.
 
-| Scan (demo entry) | Console: decoded RX | Command panel |
+| Scan and Mock devices | Console and communication log | Command panel |
 |---|---|---|
-| <img src="docs/screenshots/01-scan-demo-entry.png" width="230"> | <img src="docs/screenshots/03-console-decoded.png" width="230"> | <img src="docs/screenshots/06-commands-panel.png" width="230"> |
+| <img src="docs/screenshots/02-scan-mock-results.png" alt="Scan: device list, RSSI filter, and Mock badges" width="230"> | <img src="docs/screenshots/03-console-decoded.png" alt="Console: device tabs, communication log, and decoded fields" width="230"> | <img src="docs/screenshots/06-commands-panel.png" alt="Command panel: payload previews, execution results, and RTT" width="230"> |
 
-| Operation editor (templates) | Runner report | Workspace |
-|---|---|---|
-| <img src="docs/screenshots/07-operation-editor-template.png" width="230"> | <img src="docs/screenshots/12-runner-report.png" width="230"> | <img src="docs/screenshots/13-workspace.png" width="230"> |
-
-| Collections | Import a Debug Pack zip | Collection detail |
-|---|---|---|
-| <img src="docs/screenshots/15-collections.png" width="230"> | <img src="docs/screenshots/16-import-zip-preview.png" width="230"> | <img src="docs/screenshots/17-collection-detail.png" width="230"> |
+| Workspace and service tree | Protocol collections |
+|---|---|
+| <img src="docs/screenshots/13-workspace.png" alt="Workspace: RSSI, MTU, service tree, and Debug Pack export" width="230"> | <img src="docs/screenshots/15-collections.png" alt="Collections: device matching, import controls, and protocol list" width="230"> |
 
 ---
 

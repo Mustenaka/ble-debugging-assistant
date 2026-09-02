@@ -25,13 +25,6 @@
 
 应用内置**暗色/亮色双主题**和**中/英双语界面**，无需重启即可随时切换。
 
-<div style="display: flex; flex-wrap: wrap; gap: 10px; max-width: 420px;">
-  <img src="./docs/pics/1.jpg" width="200"/>
-  <img src="./docs/pics/4.jpg" width="200"/>
-  <img src="./docs/pics/2.jpg" width="200"/>
-  <img src="./docs/pics/3.jpg" width="200"/>
-</div>
-
 ---
 
 ## 功能特性
@@ -81,19 +74,15 @@
 
 ## 界面截图
 
-真机截图（Android）。完整的逐界面说明见[使用说明书](./docs/USER_GUIDE_zh.md)。
+Android 真机截图（2026-09-02），展示 5 个主要页面。详细操作见 [Wiki 使用说明书](https://github.com/Mustenaka/ble-debugging-assistant/wiki/中文使用说明书)或[仓库内说明书](./docs/USER_GUIDE_zh.md)。
 
-| 扫描（演示设备入口） | 控制台：RX 自动解码 | 命令面板 |
+| 扫描与 Mock 设备 | 控制台与收发日志 | 命令面板 |
 |---|---|---|
-| <img src="docs/screenshots/01-scan-demo-entry.png" width="230"> | <img src="docs/screenshots/03-console-decoded.png" width="230"> | <img src="docs/screenshots/06-commands-panel.png" width="230"> |
+| <img src="docs/screenshots/02-scan-mock-results.png" alt="扫描页：设备列表、RSSI 过滤与 Mock 标记" width="230"> | <img src="docs/screenshots/03-console-decoded.png" alt="控制台：设备切换、通信日志与字段解码" width="230"> | <img src="docs/screenshots/06-commands-panel.png" alt="命令面板：载荷预览、执行结果与 RTT" width="230"> |
 
-| 命令编辑器（模板） | 顺序执行报告 | 工作台 |
-|---|---|---|
-| <img src="docs/screenshots/07-operation-editor-template.png" width="230"> | <img src="docs/screenshots/12-runner-report.png" width="230"> | <img src="docs/screenshots/13-workspace.png" width="230"> |
-
-| 协议集合 | 导入 Debug Pack zip | 集合详情 |
-|---|---|---|
-| <img src="docs/screenshots/15-collections.png" width="230"> | <img src="docs/screenshots/16-import-zip-preview.png" width="230"> | <img src="docs/screenshots/17-collection-detail.png" width="230"> |
+| 工作台与服务树 | 协议集合管理 |
+|---|---|
+| <img src="docs/screenshots/13-workspace.png" alt="工作台：RSSI、MTU、服务树与调试包导出" width="230"> | <img src="docs/screenshots/15-collections.png" alt="集合管理：当前设备匹配、导入入口与协议集合列表" width="230"> |
 
 ---
 
