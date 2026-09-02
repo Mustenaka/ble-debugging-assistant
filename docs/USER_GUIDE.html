@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BLE Debugger User Guide</title>
+<style>
+:root{--bg:#0A0F1C;--panel:#111827;--card:#1A2235;--elev:#1E2D44;--primary:#00F5FF;--accent:#39FF14;--warn:#F59E0B;--text:#E2E8F0;--muted:#94A3B8;--dim:#64748B;--border:rgba(0,245,255,.14);--mono:"Cascadia Code","JetBrains Mono","Fira Code",Consolas,"Courier New",monospace}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:24px}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Noto Sans CJK SC",Roboto,sans-serif}
+a{color:var(--primary);text-decoration:none}a:hover{text-decoration:underline}
+a:focus-visible,summary:focus-visible{outline:2px solid var(--primary);outline-offset:4px}
+.skip-link{position:absolute;left:12px;top:-100px;z-index:10;padding:8px 14px;background:var(--panel)}
+.skip-link:focus{top:12px}
+.layout{display:grid;grid-template-columns:260px minmax(0,1fr);min-height:100vh}
+nav.toc{position:sticky;top:0;height:100vh;overflow:auto;padding:24px 18px;background:var(--panel);border-right:1px solid var(--border)}
+nav.toc .brand{font-weight:700;color:var(--primary);letter-spacing:.5px;margin-bottom:4px}
+nav.toc .ver{font-size:12px;color:var(--dim);margin-bottom:14px}
+nav.toc .lang{display:inline-block;margin-bottom:16px;padding:3px 10px;border:1px solid var(--border);border-radius:999px;font-size:12px}
+nav.toc h4{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim)}
+nav.toc ul{list-style:none;margin:0;padding:0}
+nav.toc li{margin:0}
+nav.toc a{display:block;padding:6px 8px;border-radius:6px;color:var(--muted);font-size:13px}
+nav.toc a:hover{background:var(--elev);color:var(--text);text-decoration:none}
+nav.toc li.l1>a{color:var(--text);font-weight:600}
+main{padding:32px 48px 80px;max-width:1080px;width:100%;min-width:0;overflow-wrap:anywhere}
+h1{font-size:30px;margin:0 0 8px;color:#fff}
+h2{font-size:22px;margin:44px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--border);color:var(--primary)}
+h3{font-size:17px;margin:28px 0 10px;color:#fff}
+p{margin:10px 0}
+hr{border:0;border-top:1px solid var(--border);margin:32px 0}
+code{font-family:var(--mono);font-size:.9em;background:var(--elev);padding:1px 6px;border-radius:5px;color:#A8D8A8}
+pre{background:#0D1526;border:1px solid var(--border);border-radius:10px;padding:14px 16px;overflow:auto}
+pre code{background:none;padding:0;color:#CDE7FF}
+blockquote{margin:14px 0;padding:10px 16px;border-left:3px solid var(--warn);background:rgba(245,158,11,.06);border-radius:0 8px 8px 0;color:var(--muted)}
+ul,ol{padding-left:24px}li{margin:4px 0}
+strong{color:#fff}
+.table-wrap{overflow:auto;margin:14px 0;border:1px solid var(--border);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:9px 12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
+td code{white-space:nowrap}
+th{background:var(--panel);color:var(--primary);font-weight:600;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+.gallery{display:flex;flex-wrap:wrap;gap:16px;margin:16px 0}
+figure{margin:0;flex:1 1 220px;max-width:300px;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:10px;text-align:center}
+figure.single{width:100%;max-width:300px;flex:none;margin:18px 0 24px}
+figure img{width:100%;height:auto;border-radius:10px;display:block;box-shadow:0 6px 24px rgba(0,0,0,.45)}
+figcaption{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.4}
+a.shot{display:block}
+.topbar{display:none}
+.mobile-nav{display:none}
+@media (max-width:900px){
+  .layout{grid-template-columns:1fr}
+  nav.toc{display:none}
+  .mobile-nav{display:block;padding:14px 18px;background:var(--panel);border-bottom:1px solid var(--border)}
+  .mobile-nav summary{cursor:pointer;color:var(--primary);font-weight:600;min-height:32px;padding:4px 0}
+  .mobile-nav ul{padding:8px 0;list-style:none;margin:0;columns:2;column-gap:16px}
+  .mobile-nav li{break-inside:avoid;margin:0}
+  .mobile-nav li a{display:block;padding:6px 0;font-size:13px}
+  .mobile-nav .lang{display:inline-block;margin-top:10px;font-size:13px}
+  main{padding:20px 18px 60px}
+  h1{font-size:26px}h2{font-size:21px}
+  figure{max-width:none;flex-basis:160px}
+}
+@media (max-width:400px){.mobile-nav ul{columns:1}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+@media print{
+  @page{margin:16mm}
+  body{background:#fff;color:#111;font-size:10pt;line-height:1.6}
+  nav.toc,.mobile-nav,.skip-link{display:none}.layout{display:block}
+  main{padding:0;max-width:none}
+  h1,h2,h3,h4,strong{color:#111}h2,h3,h4{break-after:avoid}
+  h2{margin-top:24px;border-color:#bbb}a{color:#16466a}
+  code{color:#16466a;background:#eef}pre{background:#f5f7fa;border-color:#ccc;white-space:pre-wrap}
+  pre code{color:#111}blockquote{color:#333;background:#f7f7f7;border-color:#777}
+  .table-wrap{overflow:visible;border-color:#bbb}table{font-size:9pt}
+  th{background:#eee;color:#111;white-space:normal}td,th{border-color:#ccc}
+  td code{white-space:normal}
+  thead{display:table-header-group}tr{break-inside:avoid}
+  figure{background:#fff;border-color:#ccc;break-inside:avoid}
+  figure.single{max-width:58mm}figure img{box-shadow:none}figcaption{color:#444}
+}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#guide-content">Skip to content</a>
+<header class="mobile-nav">
+  <details>
+    <summary>⬡ BLE Debugger · Contents</summary>
+    <nav aria-label="Contents"><ul><li class="l2"><a href="#1-what-it-is">1. What it is</a></li>
+<li class="l2"><a href="#2-quick-start">2. Quick start</a></li>
+<li class="l2"><a href="#3-layout">3. Layout</a></li>
+<li class="l2"><a href="#4-scan-and-connect">4. Scan and connect</a></li>
+<li class="l2"><a href="#5-console">5. Console</a></li>
+<li class="l2"><a href="#6-command-collection">6. Command collection</a></li>
+<li class="l2"><a href="#7-payload-templates-and-variables">7. Payload templates and variables</a></li>
+<li class="l2"><a href="#8-field-types-and-assertions">8. Field types and assertions</a></li>
+<li class="l2"><a href="#9-workspace-and-debug-pack">9. Workspace and Debug Pack</a></li>
+<li class="l2"><a href="#10-protocol-collections">10. Protocol collections</a></li>
+<li class="l2"><a href="#11-mock-mode">11. Mock mode</a></li>
+<li class="l2"><a href="#12-heartbeat-test-and-transfer-history">12. Heartbeat test and transfer history</a></li>
+<li class="l2"><a href="#13-settings">13. Settings</a></li>
+<li class="l2"><a href="#14-faq">14. FAQ</a></li></ul></nav>
+    <a class="lang" href="USER_GUIDE_zh.html">中文</a>
+  </details>
+</header>
+<div class="layout">
+<nav class="toc" aria-label="Contents">
+  <div class="brand">⬡ BLE Debugger</div>
+  <div class="ver">v0.2.0</div>
+  <a class="lang" href="USER_GUIDE_zh.html">中文</a>
+  <h4>Contents</h4>
+  <ul>
+<li class="l2"><a href="#1-what-it-is">1. What it is</a></li>
+<li class="l2"><a href="#2-quick-start">2. Quick start</a></li>
+<li class="l2"><a href="#3-layout">3. Layout</a></li>
+<li class="l2"><a href="#4-scan-and-connect">4. Scan and connect</a></li>
+<li class="l2"><a href="#5-console">5. Console</a></li>
+<li class="l2"><a href="#6-command-collection">6. Command collection</a></li>
+<li class="l2"><a href="#7-payload-templates-and-variables">7. Payload templates and variables</a></li>
+<li class="l2"><a href="#8-field-types-and-assertions">8. Field types and assertions</a></li>
+<li class="l2"><a href="#9-workspace-and-debug-pack">9. Workspace and Debug Pack</a></li>
+<li class="l2"><a href="#10-protocol-collections">10. Protocol collections</a></li>
+<li class="l2"><a href="#11-mock-mode">11. Mock mode</a></li>
+<li class="l2"><a href="#12-heartbeat-test-and-transfer-history">12. Heartbeat test and transfer history</a></li>
+<li class="l2"><a href="#13-settings">13. Settings</a></li>
+<li class="l2"><a href="#14-faq">14. FAQ</a></li>
+  </ul>
+</nav>
+<main id="guide-content" tabindex="-1">
+<h1 id="ble-debugger-user-guide">BLE Debugger User Guide</h1>
+<p>Version 0.2.0 · screenshots taken on an Android phone (HBuilderX standard base)</p>
+<p><a href="./USER_GUIDE_zh.html">中文说明书</a></p>
+<hr>
+<hr>
+<h2 id="1-what-it-is">1. What it is</h2>
+<p>BLE Debugger is a Bluetooth Low Energy tool for hardware engineers that aims to be &quot;Postman for BLE&quot;:</p>
+<ul>
+<li><strong>Connect and talk</strong>: scan, connect, service tree, HEX/ASCII send and receive, Notify, READ, MTU, RSSI, several devices at once.</li>
+<li><strong>Commands as assets</strong>: every operation has an action, payload, expected response and assertions; one tap runs it and judges PASS / FAIL / timeout.</li>
+<li><strong>Protocol Collections</strong>: services, characteristics, operations, variables and examples live in a collection decoupled from the device instance. Collections match devices by service fingerprint, can be imported, exported, shared with a team, or filled in by an AI and imported back.</li>
+<li><strong>Payload templates</strong>: <code>{{len}}</code>, <code>{{sum}}</code>, <code>{{crc16}}</code>, <code>{{seq}}</code>, <code>{{variable}}</code> make real protocols with lengths, checksums and sequence numbers runnable.</li>
+<li><strong>Typed fields</strong>: field tables use real types; RX/TX logs show <code>field=value</code>; assertions compare decoded fields.</li>
+<li><strong>Mock mode</strong>: a built-in demo device plus mock devices generated from collections; the whole flow works without hardware.</li>
+<li><strong>Debug Pack</strong>: one export produces protocol docs, session record, AI prompt, mock seed and the collection file.</li>
+</ul>
+<hr>
+<h2 id="2-quick-start">2. Quick start</h2>
+<h3 id="21-run">2.1 Run</h3>
+<ul>
+<li><strong>HBuilderX</strong>: import the project, connect a device, &quot;Run → Run to phone or emulator&quot;.</li>
+<li><strong>CLI</strong> (<code>cli.exe</code> shipped with HBuilderX 5.x):</li>
+</ul>
+<pre><code class="lang-bash">cli launch app-android --project &lt;absolute project path&gt; --deviceId &lt;adb serial&gt; --playground standard</code></pre>
+<p>Allow the Bluetooth and location permissions on first launch.</p>
+<h3 id="22-no-hardware-use-the-demo-device">2.2 No hardware? Use the demo device</h3>
+<p>The empty scan list offers &quot;No hardware? Connect demo device&quot;. It turns on mock mode and lists <strong>BLE Demo Device</strong>, which matches the built-in protocol templates: commands are answered, events are pushed periodically, battery drains. Every flow in this guide can be walked through with it.</p>
+<div class="gallery">
+<figure><a class="shot" href="./screenshots/01-scan-demo-entry.png" target="_blank" rel="noopener"><img src="./screenshots/01-scan-demo-entry.png" alt="" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Scan page with demo entry</figcaption></figure>
+<figure><a class="shot" href="./screenshots/02-scan-mock-results.png" target="_blank" rel="noopener"><img src="./screenshots/02-scan-mock-results.png" alt="" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Mock device in results</figcaption></figure>
+</div>
+<h3 id="23-ten-minute-tour">2.3 Ten-minute tour</h3>
+<ol>
+<li>Scan, connect, land on the <strong>Console</strong>.</li>
+<li>Open the &quot;Commands&quot; tab and tap ▶ on a built-in template command; watch PASS / FAIL.</li>
+<li>Tap &quot;+&quot; to create a command whose payload uses <code>{{sum}}</code>; save and run it.</li>
+<li>Long-press the command and &quot;Save last run as example&quot;; the example goes into the collection.</li>
+<li>On <strong>Workspace</strong> tap &quot;Export Debug Pack&quot; and hand the zip to a teammate or an AI.</li>
+<li>In &quot;Collections &amp; Plugins&quot; import the collection.json / zip that comes back.</li>
+</ol>
+<hr>
+<h2 id="3-layout">3. Layout</h2>
+<p>Three bottom tabs:</p>
+<div class="table-wrap"><table><thead><tr><th>Tab</th><th>Purpose</th></tr></thead><tbody><tr><td><strong>Scan</strong></td><td>discover, filter, connect, recent devices, mock mode entry</td></tr><tr><td><strong>Workspace</strong></td><td>connected devices: RSSI, MTU, service tree with annotations, collection chip, Debug Pack export</td></tr><tr><td><strong>Console</strong></td><td>live traffic: command panel + log + send area + protocol parser + heartbeat</td></tr></tbody></table></div>
+<p>From Workspace you reach <strong>Collections &amp; Plugins</strong>, <strong>Collection detail</strong> and <strong>Transfer History</strong>.</p>
+<p>Wide screens (tablets, landscape, ≥768px) switch to a multi-column layout with a fixed left sidebar.</p>
+<hr>
+<h2 id="4-scan-and-connect">4. Scan and connect</h2>
+<ul>
+<li><strong>Filter</strong> by name substring and minimum RSSI; <strong>duration</strong> 10s / 30s / 60s / unlimited.</li>
+<li><strong>Device card</strong>: signal bars, device ID, advertised service UUID chips, connectable / connected / MOCK badges, PIN button.</li>
+<li><strong>PIN</strong>: store a PIN per device and optionally write it to a characteristic right after connecting.</li>
+<li><strong>Recent devices</strong>: one-tap reconnect; 🕓 opens transfer history.</li>
+<li><strong>Multi-device</strong>: scanning continues while connected; the console has a device tab bar.</li>
+</ul>
+<p>A successful connection lands on the Console.</p>
+<hr>
+<h2 id="5-console">5. Console</h2>
+<h3 id="51-communication-log">5.1 Communication log</h3>
+<ul>
+<li>Direction (TX / RX / SYS), time, endpoint, byte count; HEX / ASCII / DUAL; auto-scroll toggle; ♥ filter when heartbeat entries exist.</li>
+<li><strong>Decoded chips</strong>: when the operation has a response field table, or the characteristic is documented in a built-in template / collection, RX is decoded into <code>field=value</code>; TX is decoded with the request field table.</li>
+<li><strong>Long-press TX</strong>: save as protocol sample, <strong>save as paired example</strong> (auto-matches the response within 2 s), create a command from it. Long-press RX saves a sample.</li>
+</ul>
+<figure class="single"><a class="shot" href="./screenshots/03-console-decoded.png" target="_blank" rel="noopener"><img src="./screenshots/03-console-decoded.png" alt="Decoded chips" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Decoded chips</figcaption></figure>
+<h3 id="52-send-area">5.2 Send area</h3>
+<ul>
+<li>HEX mode filters invalid characters; ASCII sends as-is.</li>
+<li><strong>Templates</strong>: the input accepts <code>{{len}}</code> <code>{{sum}}</code> <code>{{variable}}</code>; the <strong>ƒ</strong> button inserts tokens; the rendered bytes are previewed live and errors disable sending.</li>
+<li>Quick command chips fill the input; &quot;+&quot; saves the current input as a quick command.</li>
+</ul>
+<div class="gallery">
+<figure><a class="shot" href="./screenshots/04-console-template-input.png" target="_blank" rel="noopener"><img src="./screenshots/04-console-template-input.png" alt="" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Template input with preview</figcaption></figure>
+<figure><a class="shot" href="./screenshots/05-console-template-reply.png" target="_blank" rel="noopener"><img src="./screenshots/05-console-template-reply.png" alt="" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Mock reply by rule</figcaption></figure>
+</div>
+<h3 id="53-more">5.3 More</h3>
+<ul>
+<li>Header: NOTIFY toggle, ♥ heartbeat test, theme / language.</li>
+<li>⋮ menu: read characteristic, value history (diff), clear log, settings, disconnect.</li>
+<li>Protocol analysis: RAW / UART / custom JS plugin on the latest RX.</li>
+</ul>
+<hr>
+<h2 id="6-command-collection">6. Command collection</h2>
+<p>The &quot;Commands&quot; tab is a Postman-style panel grouped by service → characteristic → operation, showing action, payload, rendered template, description, the last 10 results and RTT.</p>
+<figure class="single"><a class="shot" href="./screenshots/06-commands-panel.png" target="_blank" rel="noopener"><img src="./screenshots/06-commands-panel.png" alt="Command panel" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Command panel</figcaption></figure>
+<h3 id="61-where-commands-come-from">6.1 Where commands come from</h3>
+<ul>
+<li><strong>Built-in templates</strong>: matched by service UUID (Generic Command, Nordic UART, Standard GATT), listed with a &quot;Template&quot; badge and a default expected response.</li>
+<li><strong>Your own</strong>: &quot;+&quot; in the toolbar or on a characteristic row; import from quick commands; create from a log entry.</li>
+<li><strong>Collections</strong>: commands are stored in the collection, so a second unit of the same product or another phone that imports the collection gets them too.</li>
+</ul>
+<h3 id="62-operation-editor">6.2 Operation editor</h3>
+<div class="gallery">
+<figure><a class="shot" href="./screenshots/07-operation-editor-template.png" target="_blank" rel="noopener"><img src="./screenshots/07-operation-editor-template.png" alt="" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Payload and tokens</figcaption></figure>
+<figure><a class="shot" href="./screenshots/08-operation-editor-expect.png" target="_blank" rel="noopener"><img src="./screenshots/08-operation-editor-expect.png" alt="" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Expected response</figcaption></figure>
+</div>
+<ul>
+<li><strong>Name / Operation ID</strong> (e.g. <code>device.getInfo</code>) used for template merging and docs.</li>
+<li><strong>Target characteristic</strong>: discovered automatically when the editor opens right after connecting.</li>
+<li><strong>Action</strong>: WRITE / WRITE NR / READ.</li>
+<li><strong>Payload</strong>: HEX or ASCII with templates; live &quot;Rendered&quot; preview; token chips; fill from saved samples or collection examples.</li>
+<li><strong>Verify expected response</strong>: waits and judges. Response characteristic (Notify enabled automatically), HEX prefix, timeout.</li>
+<li><strong>Field assertions</strong>: offset assertion (bytes at offset equal HEX) or field assertion (decoded via the response field table, see section 8).</li>
+<li><strong>Payload variants</strong>: enum values shown as chips; tap to run; the runner can expand them.</li>
+<li><strong>Doc fields</strong>: request / response frame structure, examples, field tables, mock rule.</li>
+</ul>
+<h3 id="63-run-and-judge">6.3 Run and judge</h3>
+<ul>
+<li>▶ runs; tapping the card fills the send area; long-press opens the menu.</li>
+<li>Results: PASS, FAIL (assertion), timeout, error, sent (no expectation).</li>
+<li>Run history is persisted per device and exported in SESSION_LOG.md.</li>
+</ul>
+<figure class="single"><a class="shot" href="./screenshots/09-command-longpress.png" target="_blank" rel="noopener"><img src="./screenshots/09-command-longpress.png" alt="Long-press menu" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Long-press menu</figcaption></figure>
+<h3 id="64-variables-and-environment">6.4 Variables and environment</h3>
+<p>The <code>{ }</code> button opens the variables sheet: <strong>collection variables</strong> (exported with the collection) and <strong>device overrides</strong> (local, higher priority), plus the current <code>{{seq}}</code> with a reset button.</p>
+<figure class="single"><a class="shot" href="./screenshots/10-variables.png" target="_blank" rel="noopener"><img src="./screenshots/10-variables.png" alt="Variables" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Variables</figcaption></figure>
+<h3 id="65-runner">6.5 Runner</h3>
+<p>☰▶ enters selection mode; &quot;Run N&quot;. ⚙ opens options: step delay, loops, stop on fail, expand variants. The report lists TX / RX / RTT / result per step with totals and average RTT.</p>
+<div class="gallery">
+<figure><a class="shot" href="./screenshots/11-runner-options.png" target="_blank" rel="noopener"><img src="./screenshots/11-runner-options.png" alt="" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Runner options</figcaption></figure>
+<figure><a class="shot" href="./screenshots/12-runner-report.png" target="_blank" rel="noopener"><img src="./screenshots/12-runner-report.png" alt="" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Report</figcaption></figure>
+</div>
+<h3 id="66-examples">6.6 Examples</h3>
+<ul>
+<li>Long-press a command → &quot;Save last run as example&quot; stores the request/response pair.</li>
+<li>Long-press a TX log → &quot;Save as paired example&quot; auto-matches the response within 2 s.</li>
+<li>Examples live in the collection and feed the editor, the exported docs and the mock device rules.</li>
+</ul>
+<hr>
+<h2 id="7-payload-templates-and-variables">7. Payload templates and variables</h2>
+<p>A payload is a HEX string with <code>{{...}}</code> tokens. Rendering goes left to right; checksum tokens cover only the bytes before them, so put them last.</p>
+<div class="table-wrap"><table><thead><tr><th>Token</th><th>Meaning</th><th>Example</th></tr></thead><tbody><tr><td><code>{{len}}</code></td><td>total frame length, 1 byte</td><td><code>AA 01 {{len}} {{sum}}</code> → <code>AA 01 04 AF</code></td></tr><tr><td><code>{{len:-2}}</code> / <code>{{len:+1}}</code></td><td>length plus a constant</td><td></td></tr><tr><td><code>{{len:u16le}}</code> / <code>{{len:-2:u16be}}</code></td><td>2-byte little / big endian</td><td></td></tr><tr><td><code>{{seq}}</code> / <code>{{seq:u16le}}</code></td><td>sequence number, advances after each send that uses it</td><td></td></tr><tr><td><code>{{sum}}</code> / <code>{{sum:1}}</code></td><td>sum low 8 bits; <code>:1</code> starts at offset 1</td><td></td></tr><tr><td><code>{{xor}}</code> / <code>{{xor:1}}</code></td><td>XOR checksum</td><td></td></tr><tr><td><code>{{crc8}}</code></td><td>CRC-8 (poly 0x07, init 0x00)</td><td></td></tr><tr><td><code>{{crc16}}</code> / <code>{{crc16:0:be}}</code></td><td>CRC-16/MODBUS, little endian by default</td><td></td></tr><tr><td><code>{{crc16ccitt}}</code></td><td>CRC-16/CCITT-FALSE, big endian</td><td></td></tr><tr><td><code>{{name}}</code></td><td>variable holding HEX bytes</td><td><code>token = 12 34</code></td></tr><tr><td><code>{{name:u16le}}</code> / <code>{{name:ascii}}</code></td><td>typed variable: decimal / <code>0x</code> hex / text</td><td><code>addr = 258</code> → <code>02 01</code></td></tr><tr><td><code>{{name:4}}</code></td><td>fixed length, zero padded</td><td></td></tr></tbody></table></div>
+<p>ASCII mode only substitutes <code>{{variable}}</code> text. Device overrides win over collection variables.</p>
+<hr>
+<h2 id="8-field-types-and-assertions">8. Field types and assertions</h2>
+<p>The &quot;type&quot; column accepts real types, from the picker or typed; free text such as <code>uint8</code>, <code>u16 LE</code>, <code>int16BE</code>, <code>float</code>, <code>string</code>, <code>utf-8</code>, <code>hex</code> is normalized.</p>
+<div class="table-wrap"><table><thead><tr><th>Type</th><th>Meaning</th></tr></thead><tbody><tr><td><code>u8</code> <code>i8</code></td><td>8-bit unsigned / signed</td></tr><tr><td><code>u16le</code> <code>u16be</code> <code>i16le</code> <code>i16be</code></td><td>16-bit little / big endian</td></tr><tr><td><code>u24le</code> <code>u24be</code> <code>u32le</code> <code>u32be</code> <code>i32le</code> <code>i32be</code></td><td>24 / 32-bit</td></tr><tr><td><code>f32le</code> <code>f32be</code></td><td>IEEE 754 single</td></tr><tr><td><code>bool</code></td><td>non-zero is true</td></tr><tr><td><code>bitmask</code></td><td>shown in binary</td></tr><tr><td><code>bcd</code></td><td>BCD digits</td></tr><tr><td><code>bytes</code></td><td>raw bytes (HEX)</td></tr><tr><td><code>ascii</code> <code>utf8</code></td><td>text; length <code>n</code> means to the end of the frame</td></tr></tbody></table></div>
+<p>The same types drive RX decoding, variable / variant encoding and assertions.</p>
+<p><strong>Field assertions</strong> pick a field from the response table and compare with <code>==</code> <code>!=</code> <code>&gt;</code> <code>&gt;=</code> <code>&lt;</code> <code>&lt;=</code> <code>in</code> (comma list) or <code>range</code> (<code>a..b</code>). Numbers may be decimal or <code>0x</code> hex; text / byte fields support <code>==</code> <code>!=</code> <code>in</code>. Failures report the decoded value, e.g. <code>field fwMajor=0: expect &gt;= 1</code>.</p>
+<hr>
+<h2 id="9-workspace-and-debug-pack">9. Workspace and Debug Pack</h2>
+<figure class="single"><a class="shot" href="./screenshots/13-workspace.png" target="_blank" rel="noopener"><img src="./screenshots/13-workspace.png" alt="Workspace" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Workspace</figcaption></figure>
+<ul>
+<li><strong>Device card</strong>: RSSI, MTU, go to debug, history, disconnect; expanded: RSSI history chart, MTU negotiation, service tree.</li>
+<li><strong>Service tree</strong>: property badges; names, direction, value format and operation counts from built-in templates or collection annotations; ✎ edits service / endpoint docs including operations.</li>
+<li><strong>Collection chip</strong>: the collection resolved for this device; tap to open Collections &amp; Plugins, copy JSON, or unbind.</li>
+</ul>
+<h3 id="export-debug-pack">Export Debug Pack</h3>
+<figure class="single"><a class="shot" href="./screenshots/14-export-pack.png" target="_blank" rel="noopener"><img src="./screenshots/14-export-pack.png" alt="Export" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Export</figcaption></figure>
+<p>Pick a purpose (AI analysis / mock test / team replay / archive), the documents to include, raw logs, device ID redaction, and a note; the app writes a zip and opens the system share sheet.</p>
+<div class="table-wrap"><table><thead><tr><th>File</th><th>Content</th></tr></thead><tbody><tr><td><code>README.md</code></td><td>index</td></tr><tr><td><code>PROTOCOL.md</code> / <code>protocol.json</code></td><td>services, characteristics, operations, field tables, variables, examples</td></tr><tr><td><code>collection.json</code></td><td>the collection; importable back into the app</td></tr><tr><td><code>SESSION_LOG.md</code> / <code>logs.csv</code></td><td>session summary, heartbeat stats, per-endpoint traffic, operation runs, timeline</td></tr><tr><td><code>AI_PROMPT.md</code></td><td>context and output expectations for an AI, including the collection schema and template syntax</td></tr><tr><td><code>mock.json</code></td><td>mock seed: variables, examples, and the same rules the in-app mock device uses</td></tr></tbody></table></div>
+<p><strong>AI round trip</strong>: give the zip to an AI, ask it to complete <code>collection.json</code> (names, field tables, operations, variables), then import it in Collections &amp; Plugins, merging into the existing collection with &quot;keep local&quot;.</p>
+<hr>
+<h2 id="10-protocol-collections">10. Protocol collections</h2>
+<h3 id="101-concepts">10.1 Concepts</h3>
+<ul>
+<li><strong>Fingerprint</strong>: a set of service UUIDs; a device matches when it exposes all of them (subset match); the highest score wins. An optional <strong>name rule</strong> (substring or <code>/regex/</code>) narrows it.</li>
+<li><strong>Binding</strong>: an explicitly bound device always wins. The first annotation or command on a device creates and binds a collection automatically.</li>
+<li><strong>Topology snapshot</strong>: services / characteristics / properties seen on the device, used by docs and mock.</li>
+<li><strong>Content</strong>: service and characteristic annotations, operations, variables, examples.</li>
+</ul>
+<h3 id="102-collections-plugins-page">10.2 Collections &amp; Plugins page</h3>
+<figure class="single"><a class="shot" href="./screenshots/15-collections.png" target="_blank" rel="noopener"><img src="./screenshots/15-collections.png" alt="Collections" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Collections</figcaption></figure>
+<ul>
+<li>The bar shows the current device and its matched collection.</li>
+<li>Cards: name, source (mine / imported / built-in), matched / bound badges, stats, fingerprint chips, name rule.</li>
+<li>Tap a card for the detail page; &quot;⋯&quot; or long-press opens actions: copy JSON, share JSON file, edit info, bind / unbind current device, connect as mock device, duplicate as editable, delete.</li>
+<li>The lower half manages JS parser plugins.</li>
+</ul>
+<h3 id="103-import">10.3 Import</h3>
+<figure class="single"><a class="shot" href="./screenshots/16-import-zip-preview.png" target="_blank" rel="noopener"><img src="./screenshots/16-import-zip-preview.png" alt="Import preview" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Import preview</figcaption></figure>
+<ul>
+<li>Sources: paste, clipboard, <strong>choose file</strong> (H5 and Android; <code>.json</code> or a Debug Pack <code>.zip</code>, from which collection.json is picked automatically, then protocol.json).</li>
+<li>Formats: collection.json, protocol.json (0.1 / 0.2 / 0.3), Debug Pack JSON, legacy annotations.</li>
+<li>After parsing, choose <strong>new collection</strong> or <strong>merge into existing</strong> with &quot;keep local (fill blanks)&quot; or &quot;overwrite&quot;, and optionally bind the current device.</li>
+</ul>
+<h3 id="104-collection-detail">10.4 Collection detail</h3>
+<div class="gallery">
+<figure><a class="shot" href="./screenshots/17-collection-detail.png" target="_blank" rel="noopener"><img src="./screenshots/17-collection-detail.png" alt="" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Header / topology / variables</figcaption></figure>
+<figure><a class="shot" href="./screenshots/18-collection-examples.png" target="_blank" rel="noopener"><img src="./screenshots/18-collection-examples.png" alt="" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Operations / examples</figcaption></figure>
+<figure><a class="shot" href="./screenshots/19-example-actions.png" target="_blank" rel="noopener"><img src="./screenshots/19-example-actions.png" alt="" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Example actions</figcaption></figure>
+</div>
+<ul>
+<li>Variables edited in place.</li>
+<li>Operations: tap to edit (written straight back to the collection), ✕ to delete.</li>
+<li>Examples: tap to rename, edit note, delete.</li>
+</ul>
+<hr>
+<h2 id="11-mock-mode">11. Mock mode</h2>
+<p>Enable &quot;Demo / Mock mode&quot; in Settings, or tap &quot;Connect demo device&quot; on the scan page.</p>
+<ul>
+<li><strong>Demo device</strong> <code>BLE Demo Device</code>: Generic Command Service (FFE1 write, FFE2 notify), Device Information, Battery. Rules: <code>AA 01…</code> returns device info, <code>AA 02…</code> a config ack, <code>AA 03…</code> a reboot ack, any other <code>AA…</code> a NACK; an event frame every 5 s once FFE2 is subscribed; battery drops 1% every 10 s when subscribed.</li>
+<li><strong>Collection mock devices</strong>: every collection with a topology snapshot becomes <code>&lt;name&gt; (Mock)</code>. Rules come from operations with a response example (template payloads match on the first two bytes), paired examples (matched on the request, delay = example RTT), <code>request: NONE</code> interfaces whose mock rule says <code>every Ns</code> (periodic notify), and READ operations' response examples (readable values).</li>
+<li>Replies to unsubscribed characteristics are stored as readable values.</li>
+<li>When real Bluetooth is unavailable (H5, no permission) a virtual scan lists only mock devices.</li>
+</ul>
+<figure class="single"><a class="shot" href="./screenshots/20-mock-from-collection.png" target="_blank" rel="noopener"><img src="./screenshots/20-mock-from-collection.png" alt="Mock from collection" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>Mock from collection</figcaption></figure>
+<hr>
+<h2 id="12-heartbeat-test-and-transfer-history">12. Heartbeat test and transfer history</h2>
+<ul>
+<li><strong>Heartbeat</strong>: ♥ in the console. Configure the target, a protocol-compliant payload, interval, write mode and optional response verification. Live sent / acked / missed / loss, RTT stats and trend, consecutive-miss warning; entries go to the log with a filter.</li>
+<li><strong>Transfer history</strong>: every connection is recorded (logs, stats, RSSI range, MTU, end reason, heartbeat stats) grouped by device; view the timeline, export a single-session SESSION_LOG.md, delete.</li>
+</ul>
+<hr>
+<h2 id="13-settings">13. Settings</h2>
+<p>Theme (dark / light), language (中文 / English), Demo / Mock mode, About (version from manifest).</p>
+<hr>
+<h2 id="14-faq">14. FAQ</h2>
+<p><strong>A built-in template command only shows &quot;sent&quot;?</strong> Since 0.2.0 templates carry a default expectation; for your own commands enable &quot;Verify expected response&quot; in the editor.</p>
+<p><strong>Zip import says it cannot unzip?</strong> The WebView lacks DecompressionStream and native unzip failed; unzip on a computer and import the collection.json inside.</p>
+<p><strong>No &quot;Choose file&quot; on iOS?</strong> The iOS file picker is not wired yet; use paste or clipboard.</p>
+<p><strong>A second unit of the same product shows no commands?</strong> Collections match by service fingerprint, so identical devices share automatically. If the wrong collection matched, bind the right one to the device on the Collections page.</p>
+<p><strong>Descriptors / bonding?</strong> Not exposed by the uni-app BLE API.</p>
+</main>
+</div>
+</body>
+</html>

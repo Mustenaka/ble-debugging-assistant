@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BLE 调试助手 使用说明书</title>
+<style>
+:root{--bg:#0A0F1C;--panel:#111827;--card:#1A2235;--elev:#1E2D44;--primary:#00F5FF;--accent:#39FF14;--warn:#F59E0B;--text:#E2E8F0;--muted:#94A3B8;--dim:#64748B;--border:rgba(0,245,255,.14);--mono:"Cascadia Code","JetBrains Mono","Fira Code",Consolas,"Courier New",monospace}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:24px}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.7 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei","Noto Sans CJK SC",Roboto,sans-serif}
+a{color:var(--primary);text-decoration:none}a:hover{text-decoration:underline}
+a:focus-visible,summary:focus-visible{outline:2px solid var(--primary);outline-offset:4px}
+.skip-link{position:absolute;left:12px;top:-100px;z-index:10;padding:8px 14px;background:var(--panel)}
+.skip-link:focus{top:12px}
+.layout{display:grid;grid-template-columns:260px minmax(0,1fr);min-height:100vh}
+nav.toc{position:sticky;top:0;height:100vh;overflow:auto;padding:24px 18px;background:var(--panel);border-right:1px solid var(--border)}
+nav.toc .brand{font-weight:700;color:var(--primary);letter-spacing:.5px;margin-bottom:4px}
+nav.toc .ver{font-size:12px;color:var(--dim);margin-bottom:14px}
+nav.toc .lang{display:inline-block;margin-bottom:16px;padding:3px 10px;border:1px solid var(--border);border-radius:999px;font-size:12px}
+nav.toc h4{margin:0 0 8px;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--dim)}
+nav.toc ul{list-style:none;margin:0;padding:0}
+nav.toc li{margin:0}
+nav.toc a{display:block;padding:6px 8px;border-radius:6px;color:var(--muted);font-size:13px}
+nav.toc a:hover{background:var(--elev);color:var(--text);text-decoration:none}
+nav.toc li.l1>a{color:var(--text);font-weight:600}
+main{padding:32px 48px 80px;max-width:1080px;width:100%;min-width:0;overflow-wrap:anywhere}
+h1{font-size:30px;margin:0 0 8px;color:#fff}
+h2{font-size:22px;margin:44px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--border);color:var(--primary)}
+h3{font-size:17px;margin:28px 0 10px;color:#fff}
+p{margin:10px 0}
+hr{border:0;border-top:1px solid var(--border);margin:32px 0}
+code{font-family:var(--mono);font-size:.9em;background:var(--elev);padding:1px 6px;border-radius:5px;color:#A8D8A8}
+pre{background:#0D1526;border:1px solid var(--border);border-radius:10px;padding:14px 16px;overflow:auto}
+pre code{background:none;padding:0;color:#CDE7FF}
+blockquote{margin:14px 0;padding:10px 16px;border-left:3px solid var(--warn);background:rgba(245,158,11,.06);border-radius:0 8px 8px 0;color:var(--muted)}
+ul,ol{padding-left:24px}li{margin:4px 0}
+strong{color:#fff}
+.table-wrap{overflow:auto;margin:14px 0;border:1px solid var(--border);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{padding:9px 12px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
+td code{white-space:nowrap}
+th{background:var(--panel);color:var(--primary);font-weight:600;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+.gallery{display:flex;flex-wrap:wrap;gap:16px;margin:16px 0}
+figure{margin:0;flex:1 1 220px;max-width:300px;background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:10px;text-align:center}
+figure.single{width:100%;max-width:300px;flex:none;margin:18px 0 24px}
+figure img{width:100%;height:auto;border-radius:10px;display:block;box-shadow:0 6px 24px rgba(0,0,0,.45)}
+figcaption{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.4}
+a.shot{display:block}
+.topbar{display:none}
+.mobile-nav{display:none}
+@media (max-width:900px){
+  .layout{grid-template-columns:1fr}
+  nav.toc{display:none}
+  .mobile-nav{display:block;padding:14px 18px;background:var(--panel);border-bottom:1px solid var(--border)}
+  .mobile-nav summary{cursor:pointer;color:var(--primary);font-weight:600;min-height:32px;padding:4px 0}
+  .mobile-nav ul{padding:8px 0;list-style:none;margin:0;columns:2;column-gap:16px}
+  .mobile-nav li{break-inside:avoid;margin:0}
+  .mobile-nav li a{display:block;padding:6px 0;font-size:13px}
+  .mobile-nav .lang{display:inline-block;margin-top:10px;font-size:13px}
+  main{padding:20px 18px 60px}
+  h1{font-size:26px}h2{font-size:21px}
+  figure{max-width:none;flex-basis:160px}
+}
+@media (max-width:400px){.mobile-nav ul{columns:1}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+@media print{
+  @page{margin:16mm}
+  body{background:#fff;color:#111;font-size:10pt;line-height:1.6}
+  nav.toc,.mobile-nav,.skip-link{display:none}.layout{display:block}
+  main{padding:0;max-width:none}
+  h1,h2,h3,h4,strong{color:#111}h2,h3,h4{break-after:avoid}
+  h2{margin-top:24px;border-color:#bbb}a{color:#16466a}
+  code{color:#16466a;background:#eef}pre{background:#f5f7fa;border-color:#ccc;white-space:pre-wrap}
+  pre code{color:#111}blockquote{color:#333;background:#f7f7f7;border-color:#777}
+  .table-wrap{overflow:visible;border-color:#bbb}table{font-size:9pt}
+  th{background:#eee;color:#111;white-space:normal}td,th{border-color:#ccc}
+  td code{white-space:normal}
+  thead{display:table-header-group}tr{break-inside:avoid}
+  figure{background:#fff;border-color:#ccc;break-inside:avoid}
+  figure.single{max-width:58mm}figure img{box-shadow:none}figcaption{color:#444}
+}
+</style>
+</head>
+<body>
+<a class="skip-link" href="#guide-content">跳到正文</a>
+<header class="mobile-nav">
+  <details>
+    <summary>⬡ BLE Debugger · 目录</summary>
+    <nav aria-label="目录"><ul><li class="l2"><a href="#1-这是什么">1. 这是什么</a></li>
+<li class="l2"><a href="#2-快速开始">2. 快速开始</a></li>
+<li class="l2"><a href="#3-界面导览">3. 界面导览</a></li>
+<li class="l2"><a href="#4-扫描与连接">4. 扫描与连接</a></li>
+<li class="l2"><a href="#5-控制台">5. 控制台</a></li>
+<li class="l2"><a href="#6-命令集合">6. 命令集合</a></li>
+<li class="l2"><a href="#7-载荷模板与变量">7. 载荷模板与变量</a></li>
+<li class="l2"><a href="#8-字段类型与断言">8. 字段类型与断言</a></li>
+<li class="l2"><a href="#9-工作台与导出调试包">9. 工作台与导出调试包</a></li>
+<li class="l2"><a href="#10-协议集合">10. 协议集合</a></li>
+<li class="l2"><a href="#11-mock-模式">11. Mock 模式</a></li>
+<li class="l2"><a href="#12-心跳测试与传输历史">12. 心跳测试与传输历史</a></li>
+<li class="l2"><a href="#13-设置">13. 设置</a></li>
+<li class="l2"><a href="#14-常见问题">14. 常见问题</a></li></ul></nav>
+    <a class="lang" href="USER_GUIDE.html">English</a>
+  </details>
+</header>
+<div class="layout">
+<nav class="toc" aria-label="目录">
+  <div class="brand">⬡ BLE Debugger</div>
+  <div class="ver">v0.2.0</div>
+  <a class="lang" href="USER_GUIDE.html">English</a>
+  <h4>目录</h4>
+  <ul>
+<li class="l2"><a href="#1-这是什么">1. 这是什么</a></li>
+<li class="l2"><a href="#2-快速开始">2. 快速开始</a></li>
+<li class="l2"><a href="#3-界面导览">3. 界面导览</a></li>
+<li class="l2"><a href="#4-扫描与连接">4. 扫描与连接</a></li>
+<li class="l2"><a href="#5-控制台">5. 控制台</a></li>
+<li class="l2"><a href="#6-命令集合">6. 命令集合</a></li>
+<li class="l2"><a href="#7-载荷模板与变量">7. 载荷模板与变量</a></li>
+<li class="l2"><a href="#8-字段类型与断言">8. 字段类型与断言</a></li>
+<li class="l2"><a href="#9-工作台与导出调试包">9. 工作台与导出调试包</a></li>
+<li class="l2"><a href="#10-协议集合">10. 协议集合</a></li>
+<li class="l2"><a href="#11-mock-模式">11. Mock 模式</a></li>
+<li class="l2"><a href="#12-心跳测试与传输历史">12. 心跳测试与传输历史</a></li>
+<li class="l2"><a href="#13-设置">13. 设置</a></li>
+<li class="l2"><a href="#14-常见问题">14. 常见问题</a></li>
+  </ul>
+</nav>
+<main id="guide-content" tabindex="-1">
+<h1 id="ble-调试助手-使用说明书">BLE 调试助手 使用说明书</h1>
+<p>适用版本 0.2.0 · 更新于 2026-09-02</p>
+<p><a href="./USER_GUIDE.html">English version</a></p>
+<p>从连接设备、发送第一条命令，到整理协议、批量验证和分享调试包。本说明书使用内置 <strong>BLE Demo Device</strong> 演示，首次使用可直接从第 2 节开始。</p>
+<blockquote><p>截图来自 Android 真机（HBuilderX 标准基座），用于识别主要页面。截图中的版本标签和演示数据可能与当前版本不同，具体操作以本文及当前界面为准。</p></blockquote>
+<hr>
+<h2 id="1-这是什么">1. 这是什么</h2>
+<p>BLE 调试助手面向蓝牙低功耗设备的开发和联调，将收发记录、协议说明和可执行命令放在同一套工作流程里。</p>
+<div class="table-wrap"><table><thead><tr><th>你要完成的工作</th><th>对应能力</th></tr></thead><tbody><tr><td>找到设备并验证链路</td><td>扫描、连接、服务发现、HEX / ASCII 收发、READ、Notify、RSSI、MTU</td></tr><tr><td>重复验证一条协议命令</td><td>保存命令、配置期望响应和字段断言，查看 PASS / FAIL / 超时和 RTT</td></tr><tr><td>调试同型号的多台设备</td><td>多设备会话、集合匹配、每台设备的变量覆盖</td></tr><tr><td>整理和分享协议</td><td>接口注释、请求 / 响应字段表、配对样例、集合导入导出</td></tr><tr><td>没有硬件时演练</td><td>内置演示设备、根据集合生成的 Mock 设备</td></tr><tr><td>请同事或 AI 分析问题</td><td>导出 Debug Pack，包含所选协议文档、记录、分析上下文和 Mock 数据</td></tr></tbody></table></div>
+<p>建议的工作顺序：<strong>连接 → 确认端点 → 收发验证 → 保存命令 → 添加断言 → 保存样例 → 导出或复用集合</strong>。</p>
+<h2 id="2-快速开始">2. 快速开始</h2>
+<h3 id="21-运行与准备">2.1 运行与准备</h3>
+<p>已有可运行 App 时，直接打开即可。使用项目源码时，在 <strong>HBuilderX</strong> 中导入项目，连接手机，选择「运行 → 运行到手机或模拟器」，再选择目标设备。调试真实 BLE 外设时使用具备蓝牙能力的真机。</p>
+<p>首次进入扫描页，按系统提示授予蓝牙 / 附近设备及定位等所需权限，并开启手机蓝牙。真实设备应处于可发现、可连接状态；只练习操作时可先使用 Mock。</p>
+<div class="table-wrap"><table><thead><tr><th>运行环境</th><th>本说明书中的使用方式</th></tr></thead><tbody><tr><td>Android App</td><td>真实 BLE 或 Mock；可选择 JSON / ZIP 文件导入；调试包可打包并调起系统分享</td></tr><tr><td>iOS App</td><td>项目提供 BLE 和 Mock 路径；集合使用粘贴 / 剪贴板导入，当前没有 App 内文件选择器；本文配图来自 Android</td></tr><tr><td>H5 浏览器</td><td>用 Mock 走通界面与协议流程；当前项目未接入 Web Bluetooth；导出时逐个下载文件</td></tr></tbody></table></div>
+<h3 id="22-没有硬件连接演示设备">2.2 没有硬件：连接演示设备</h3>
+<ol>
+<li>在扫描页空态下点击「没有硬件？连接演示设备」，开启 Mock 并开始扫描。</li>
+<li>列表已有设备、看不到演示入口时，打开设置，启用「演示 / Mock 模式」，再扫描。</li>
+<li>找到带 <strong>MOCK</strong> 标记的 <strong>BLE Demo Device</strong>，点击连接。连接后进入控制台。</li>
+<li>切换到「命令」，找到 <strong>Generic Command Service → Command TX → Get Device Info</strong>，点击右侧 ▶。</li>
+<li>查看执行结果，切回「控制台」检查 TX / RX。首次执行可能需要先发现特征值并订阅响应端点。</li>
+</ol>
+<p>这条演示命令的参数如下，完整 UUID 可在工作台服务树中查看：</p>
+<div class="table-wrap"><table><thead><tr><th>项目</th><th>演示值</th></tr></thead><tbody><tr><td>服务 / 写入特征值</td><td><code>FFE0</code> / <code>FFE1</code></td></tr><tr><td>动作 / 请求</td><td>WRITE / <code>AA 01 00 AB</code></td></tr><tr><td>响应特征值</td><td><code>FFE2</code>（Notify）</td></tr><tr><td>设备信息响应</td><td><code>AA 81 03 01 00 10 39</code></td></tr><tr><td>正常结果</td><td>命令显示 PASS 和 RTT；日志有对应 TX 和 RX</td></tr></tbody></table></div>
+<blockquote><p>这些字节只用于内置演示协议。内置模板按 UUID 匹配，真实设备使用相同 UUID 也可能采用不同帧格式，发送前应按设备协议修改载荷和响应条件。</p></blockquote>
+<h3 id="23-完成一次调试闭环">2.3 完成一次调试闭环</h3>
+<ol>
+<li>执行上面的查询，确认链路和应答。</li>
+<li>长按内置命令选择复制，再长按副本进入编辑，将响应前缀细化为 <code>AA 81</code>，超时设为 <code>2000</code> ms，保存并执行副本。</li>
+<li>长按成功执行的命令，选择「保存最近执行为样例」，保存本次请求和响应。</li>
+<li>到工作台展开设备，确认服务树和集合名称；点击「导出调试包」，勾选接口文档、传输记录及需要的其他文档。</li>
+<li>填写调试目标并导出。在另一台手机的「集合与插件」中导入包内的 <code>collection.json</code>，或直接选择调试包 ZIP。</li>
+</ol>
+<p>完成后，你应有一条可重复执行的命令、一份配对样例和一份可导出的协议资产。</p>
+<h2 id="3-界面导览">3. 界面导览</h2>
+<p>底部有三个主入口，宽屏（平板、横屏、宽度 ≥768px）使用固定侧边导航和多栏布局。</p>
+<div class="table-wrap"><table><thead><tr><th>入口</th><th>主要任务</th><th>常用下一步</th></tr></thead><tbody><tr><td><strong>扫描</strong></td><td>找设备、过滤、连接、最近连接、启用演示</td><td>连接后进入控制台</td></tr><tr><td><strong>工作台</strong></td><td>查看设备、RSSI、MTU、服务树、接口注释和集合</td><td>选择特征值调试，或导出调试包</td></tr><tr><td><strong>控制台</strong></td><td>命令执行、实时日志、手动发送、协议解析、心跳</td><td>保存命令 / 样例，查看判定和问题原因</td></tr></tbody></table></div>
+<p>手机控制台包含「命令」和「控制台」两个内部页签，两者属于同一个已连接设备。顶部设备栏可切换多台设备，发送前核对当前设备和特征值。</p>
+<div class="table-wrap"><table><thead><tr><th>名词</th><th>在本 App 中的含义</th></tr></thead><tbody><tr><td>服务（Service）</td><td>一组相关特征值的容器，用 UUID 标识</td></tr><tr><td>特征值（Characteristic） / 端点</td><td>实际读、写或订阅的入口，由服务 UUID + 特征值 UUID 定位</td></tr><tr><td>命令（Operation）</td><td>保存的目标、动作、载荷、响应条件和文档</td></tr><tr><td>协议集合（Collection）</td><td>可跨设备复用的命令、注释、变量、样例和拓扑</td></tr><tr><td>样例（Example）</td><td>保存的一段通信，可含成对的请求和响应</td></tr><tr><td>RTT</td><td>从请求到匹配响应的往返耗时，单位 ms</td></tr></tbody></table></div>
+<h2 id="4-扫描与连接">4. 扫描与连接</h2>
+<figure class="single"><a class="shot" href="./screenshots/02-scan-mock-results.png" target="_blank" rel="noopener"><img src="./screenshots/02-scan-mock-results.png" alt="扫描页总览：状态、名称与 RSSI 过滤、扫描时长、设备列表和 Mock 标记" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>扫描页总览：状态、名称与 RSSI 过滤、扫描时长、设备列表和 Mock 标记</figcaption></figure>
+<h3 id="41-扫描设备">4.1 扫描设备</h3>
+<ol>
+<li>输入设备名的一部分，或先留空查看全部结果。</li>
+<li>设置最小 RSSI 和扫描时长（10s / 30s / 60s / 不限），点击开始扫描。</li>
+<li>通过名称、设备 ID、广播服务 UUID 和 MOCK 标记辨认设备，再点击设备卡片连接。</li>
+<li>需要添加设备时返回扫描页，可以保持现有连接并继续扫描。</li>
+</ol>
+<p>RSSI 数值越接近 0，接收信号通常越强，例如 <code>-50 dBm</code> 比 <code>-90 dBm</code> 强。提高门槛会隐藏弱信号设备，找不到目标时先放宽过滤。广播中的服务标签用于初步识别，完整服务与特征值在连接后查看。</p>
+<p>「停止扫描」结束发现过程；「清空」清除扫描结果列表。最近连接用于一键重连，旁边的历史入口可查看传输会话。重连失败时重新扫描，确认设备仍使用原来的标识并允许连接。</p>
+<h3 id="42-pin-配置">4.2 PIN 配置</h3>
+<p>设备卡片的钥匙按钮可保存 PIN、编码方式及目标服务 / 特征值。配置自动发送后，App 会在连接成功后把 PIN 写入指定端点；未配置自动发送时按提示手动发送。</p>
+<p>这里保存的是设备协议所需的认证载荷。系统蓝牙配对弹窗仍由操作系统和设备决定，App 的 PIN 写入不能替代所有系统配对流程。</p>
+<h3 id="43-连接后先确认什么">4.3 连接后先确认什么</h3>
+<ul>
+<li>顶部设备名是否正确，是否带 MOCK 标记。</li>
+<li>到工作台展开服务树，确认可写端点和接收端点的 UUID、属性。</li>
+<li>接收端点是否需要开启 Notify，设备是否要求先认证。</li>
+<li>多设备切换时核对各自的命令、变量覆盖和日志；结束后可单独断开某台设备。</li>
+</ul>
+<h2 id="5-控制台">5. 控制台</h2>
+<figure class="single"><a class="shot" href="./screenshots/03-console-decoded.png" target="_blank" rel="noopener"><img src="./screenshots/03-console-decoded.png" alt="控制台总览：设备栏、内部页签、通信日志、目标特征值和发送区；图中选中只读端点，发送按钮不可用" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>控制台总览：设备栏、内部页签、通信日志、目标特征值和发送区；图中选中只读端点，发送按钮不可用</figcaption></figure>
+<h3 id="51-选择端点与第一次手动收发">5.1 选择端点与第一次手动收发</h3>
+<p>从工作台展开服务，选择目标特征值进入调试。发送区显示当前 Service / Char 和属性，选错时先返回工作台更换端点。</p>
+<div class="table-wrap"><table><thead><tr><th>属性 / 动作</th><th>如何使用</th></tr></thead><tbody><tr><td>READ</td><td>主动读取一次当前值，结果作为 RX 进入日志</td></tr><tr><td>WRITE</td><td>使用有写入响应的方式发送；业务是否成功仍需查看设备响应</td></tr><tr><td>WRITE NR</td><td>无写入响应方式，目标必须支持；同样可另行配置业务应答判定</td></tr><tr><td>NOTIFY / INDICATE</td><td>订阅设备主动上报；手动收发时先在接收端点开启通知</td></tr></tbody></table></div>
+<p>以演示设备为例：先在 <code>FFE0 / FFE2</code> 开启 Notify，再选 <code>FFE0 / FFE1</code>，切到 HEX，输入 <code>AA 01 00 AB</code> 并发送。日志应出现 TX 和以 <code>AA 81</code> 开头的 RX。执行带期望响应的命令时，App 会尝试自动开启指定响应端点的通知。</p>
+<h3 id="52-阅读通信日志">5.2 阅读通信日志</h3>
+<ul>
+<li><strong>TX / RX / SYS</strong>：发送、接收和系统事件；每条记录带时间、端点及字节数。</li>
+<li><strong>HEX / ASCII / DUAL</strong>：十六进制、文本或两种内容同时显示；二进制协议优先查看 HEX。</li>
+<li><strong>自动滚动</strong>：开启后跟随新数据；关闭后可查看旧记录，使用新消息提示返回底部。</li>
+<li><strong>字段值标签</strong>：有字段表时显示 <code>字段=值</code>。命令的请求 / 响应字段表及特征值文档参与解码。</li>
+<li><strong>心跳过滤</strong>：有心跳记录时可通过 ♥ 控制是否显示心跳收发。</li>
+</ul>
+<p>长按 TX 可保存单条协议样例、配对保存为样例，或由日志生成命令；长按 RX 可保存接收样例。自动配对寻找 2 秒内的响应，保存后应核对是否混入周期上报。带期望响应的命令执行记录通常更适合保存明确的请求 / 响应对。</p>
+<h3 id="53-发送区与快捷命令">5.3 发送区与快捷命令</h3>
+<p>HEX 按字节填写，例如 <code>01 02 FF A0</code>。输入控件会过滤非法字符，发送前仍需核对最终内容和字节数。ASCII 用于文本协议。HEX 模板会显示渲染结果，未定义变量或错误格式会提示并阻止发送。</p>
+<p>工具栏 <strong>ƒ</strong> 可插入占位符，语法见第 7 节。快捷命令点击后填入发送区；「保存为快捷命令」保存当前内容。需要保存目标端点、期望响应和执行记录时，使用第 6 节的命令集合。</p>
+<h3 id="54-其他入口">5.4 其他入口</h3>
+<p>顶部可开启心跳、切换语言 / 主题；更多菜单提供读取特征值、特征值历史（值 Diff）、清空日志、设置和断开等操作。Notify 开关是否显示取决于当前特征值属性。</p>
+<p>「协议解析」使用 RAW、UART 或自定义 JS 插件解析最近一条 RX。集合字段表驱动日志解码和断言；自定义插件的解析结果显示在此区域，配置见第 10.5 节。</p>
+<h2 id="6-命令集合">6. 命令集合</h2>
+<figure class="single"><a class="shot" href="./screenshots/06-commands-panel.png" target="_blank" rel="noopener"><img src="./screenshots/06-commands-panel.png" alt="命令面板总览：按服务与特征值分组，显示载荷、模板预览、执行按钮、最近结果和 RTT" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>命令面板总览：按服务与特征值分组，显示载荷、模板预览、执行按钮、最近结果和 RTT</figcaption></figure>
+<h3 id="61-命令来源">6.1 命令来源</h3>
+<ul>
+<li><strong>内置模板</strong>：按服务 UUID 匹配 Generic Command、Nordic UART、Standard GATT 等模板，带「模板」标记；可执行模板命令默认配置期望响应。<code>request: NONE</code> 的事件接口不会显示成可执行命令。</li>
+<li><strong>自建命令</strong>：点击面板或特征值行的「＋」，也可导入快捷命令或由 TX 日志生成。</li>
+<li><strong>协议集合</strong>：命令跟随集合复用，同型号设备匹配或绑定集合后可以使用。</li>
+</ul>
+<p>内置命令是协议起点。操作真实设备时应确认请求格式、响应端点和字段含义，而不只看服务 UUID 是否相同。</p>
+<h3 id="62-新建或编辑命令">6.2 新建或编辑命令</h3>
+<ol>
+<li>点「＋」，或长按自建命令选择编辑，填写名称和 Operation ID（如 <code>device.getInfo</code>）。内置模板命令需先复制，再编辑副本。</li>
+<li>选择服务 / 目标特征值和动作 WRITE、WRITE NR 或 READ。刚连接时等待特征值发现完成。</li>
+<li>写命令选择 HEX / ASCII，填写载荷；READ 无需载荷。模板下方显示渲染后的 HEX。</li>
+<li>开启「校验期望响应」，指定响应特征值、HEX 前缀和超时。前缀应能区分业务响应与周期事件。</li>
+<li>验证字段时补充响应字段表和断言；多组输入可填写载荷变体。</li>
+<li>文档字段中整理请求 / 响应说明、帧样例、字段表和 Mock 规则，保存后用 ▶ 验证。</li>
+</ol>
+<p>「从已存样例填入」可复用协议样例或集合样例。Operation ID 用于命令与模板的对应及导出，修改显示名称时通常可保留原 ID。</p>
+<h3 id="63-执行方式与结果">6.3 执行方式与结果</h3>
+<p>普通模式下，点击卡片填入发送区，点击 ▶ 立即执行，点击载荷变体按该变体执行；长按打开编辑、复制、删除、保存最近执行为样例等菜单。</p>
+<div class="table-wrap"><table><thead><tr><th>结果</th><th>表示什么</th><th>下一步</th></tr></thead><tbody><tr><td>PASS</td><td>找到符合端点 / 前缀条件的响应，配置的断言全部通过</td><td>查看 RX 与 RTT，按需保存样例</td></tr><tr><td>FAIL</td><td>匹配到响应，但字段 / 偏移断言不满足</td><td>核对字段类型、偏移和预期值</td></tr><tr><td>超时</td><td>超时前未收到满足匹配条件的响应</td><td>检查 Notify、端点、前缀和设备状态</td></tr><tr><td>错误</td><td>不可写、断连、载荷渲染失败或设备忙等执行错误</td><td>根据提示修正后重试</td></tr><tr><td>已发送</td><td>未启用期望响应校验，该动作已完成</td><td>需业务成功判定时开启期望响应和断言</td></tr></tbody></table></div>
+<p>不符合响应前缀的 RX 会出现在日志中，但不会立刻判为 FAIL，App 会继续等待匹配或超时。内置模板的默认前缀可能只匹配首字节，正式验证应细化匹配并补充断言。PASS 的范围取决于你配置了哪些检查。</p>
+<p>每台设备的每条命令保留最近 10 次执行记录，面板以结果圆点和 RTT 展示，导出的 <code>SESSION_LOG.md</code> 可包含 Operation Runs。</p>
+<h3 id="64-变量与环境">6.4 变量与环境</h3>
+<p>工具栏 <strong>{ }</strong> 打开变量面板。集合变量用于共享默认参数，设备覆盖用于当前手机上某台设备的不同取值，优先级为 <strong>设备覆盖 &gt; 集合变量</strong>。面板显示当前会话序号并支持重置。</p>
+<p>例如 <code>token = 12 34</code>，载荷 <code>AA 02 {{token}} {{sum}}</code> 渲染为 <code>AA 02 12 34 F2</code>。另一台设备可用本机覆盖值，无需修改共享集合。</p>
+<h3 id="65-顺序执行runner">6.5 顺序执行（Runner）</h3>
+<ol>
+<li>点击工具栏 ☰▶ 进入选择模式，勾选命令。</li>
+<li>打开 ⚙ 设置选项，确认目标设备与每条命令的响应条件。</li>
+<li>点击「运行 N 条」，等待报告，查看每一步 TX、RX、RTT 和结果。</li>
+</ol>
+<div class="table-wrap"><table><thead><tr><th>选项</th><th>含义 / 初始默认值</th></tr></thead><tbody><tr><td>步间延时</td><td>步骤之间等待，默认 200 ms</td></tr><tr><td>循环次数</td><td>重复执行所选命令，默认 1 次</td></tr><tr><td>失败即停</td><td>遇到 FAIL / 超时 / 错误时停止，默认关闭</td></tr><tr><td>展开变体</td><td>有变体的命令按各变体分别运行，默认关闭</td></tr></tbody></table></div>
+<p>顺序按面板中的命令排列，勾选先后不会改变顺序；展开变体增加实际步骤数。报告显示汇总、平均 RTT，未完成计划步骤时标明中止。选项会保存供下次使用。</p>
+<blockquote><p>Runner 的成功汇总也包含「已发送」。需要比较响应通过率时，让参与验证的命令都开启期望响应，并逐步查看报告结果。</p></blockquote>
+<h3 id="66-保存样例">6.6 保存样例</h3>
+<p>成功执行后长按命令，选择「保存最近执行为样例」，把请求 / 响应保存到集合。手动收发也可从 TX 配对保存。详情页可重命名、编辑备注或删除样例。</p>
+<p>样例用于编辑器填入、导出和 Mock 规则生成，可在备注中注明固件版本、参数条件和预期现象。</p>
+<h2 id="7-载荷模板与变量">7. 载荷模板与变量</h2>
+<h3 id="71-hex-模板速查">7.1 HEX 模板速查</h3>
+<p>在 HEX 中插入 <code>{{...}}</code>。长度按最终字节数计算，校验类占位符从左到右计算，只覆盖它前面的字节，通常放在帧尾。</p>
+<div class="table-wrap"><table><thead><tr><th>占位符</th><th>含义</th><th>示例或注意事项</th></tr></thead><tbody><tr><td><code>{{len}}</code></td><td>整帧字节数，默认 1 字节</td><td><code>AA 01 {{len}} {{sum}}</code> → <code>AA 01 04 AF</code></td></tr><tr><td><code>{{len:-2}}</code> / <code>{{len:+1}}</code></td><td>整帧长度加减常量</td><td>需按协议扣除帧头等字节，不自动识别载荷长度</td></tr><tr><td><code>{{len:u16le}}</code> / <code>{{len:-2:u16be}}</code></td><td>两字节长度，小端 / 大端</td><td>长度字段自身也计入总长</td></tr><tr><td><code>{{seq}}</code> / <code>{{seq:u16le}}</code></td><td>当前会话序号</td><td>默认取低 8 位，两字节需显式指定类型</td></tr><tr><td><code>{{sum}}</code> / <code>{{sum:1}}</code></td><td>累加和低 8 位</td><td><code>:1</code> 表示从偏移 1 开始，偏移从 0 计数</td></tr><tr><td><code>{{xor}}</code> / <code>{{xor:1}}</code></td><td>异或校验</td><td>可指定起始偏移</td></tr><tr><td><code>{{crc8}}</code></td><td>CRC-8</td><td>poly <code>0x07</code>，init <code>0x00</code></td></tr><tr><td><code>{{crc16}}</code> / <code>{{crc16:0:be}}</code></td><td>CRC-16/MODBUS</td><td>默认小端，第二种从偏移 0 计算并按大端输出</td></tr><tr><td><code>{{crc16ccitt}}</code></td><td>CRC-16/CCITT-FALSE</td><td>默认大端，poly <code>0x1021</code>，init <code>0xFFFF</code></td></tr><tr><td><code>{{name}}</code></td><td>变量按 HEX 字节串插入</td><td><code>token = 12 34</code> → <code>12 34</code></td></tr><tr><td><code>{{name:u16le}}</code></td><td>变量按数值类型编码</td><td><code>addr = 258</code> 或 <code>0x102</code> → <code>02 01</code></td></tr><tr><td><code>{{name:ascii}}</code></td><td>变量按文本编码</td><td><code>tag = OK</code> → <code>4F 4B</code></td></tr><tr><td><code>{{name:4}}</code></td><td>原始字节变量固定为 4 字节</td><td>不足补零，超出截断，先核对预览</td></tr></tbody></table></div>
+<h3 id="72-一个可以复现的模板例子">7.2 一个可以复现的模板例子</h3>
+<ol>
+<li>在变量面板保存 <code>token</code>，值为 <code>12 34</code>。</li>
+<li>新建演示命令，目标 <code>FFE0 / FFE1</code>，动作 WRITE，HEX 载荷 <code>AA 02 {{token}} {{sum}}</code>。</li>
+<li>预览应为 <code>AA 02 12 34 F2</code>，前四字节之和的低 8 位是 <code>F2</code>。</li>
+<li>开启期望响应，端点 <code>FFE2</code>，前缀 <code>AA 82</code>，超时 <code>2000</code> ms。</li>
+<li>执行后，内置演示设备返回 <code>AA 82 01 00 2D</code>，符合条件时显示 PASS。</li>
+</ol>
+<p>此例练习模板与响应匹配。Mock 按请求前缀应答，不能据此证明真实协议的长度或校验算法正确。</p>
+<h3 id="73-序号ascii-与常见错误">7.3 序号、ASCII 与常见错误</h3>
+<p><code>{{seq}}</code> 按设备会话保存，初始为 0，预览不消耗序号。发送路径渲染含 seq 的载荷时消耗序号，后续写入失败也可能出现跳号。新连接会话从 0 开始，可在变量面板重置。</p>
+<p>ASCII 模式替换 <code>{{变量名}}</code>，支持 <code>{{seq}}</code> 的十进制文本，不计算 HEX 模式的长度、校验或类型编码。未知变量会原样保留在文本中，发送前应检查输入。</p>
+<div class="table-wrap"><table><thead><tr><th>提示 / 现象</th><th>处理方法</th></tr></thead><tbody><tr><td><code>unknown token</code></td><td>检查变量是否保存、名称大小写、当前设备环境</td></tr><tr><td><code>variable … is not hex</code></td><td>原始变量须为完整 HEX；数值或文本使用 <code>:u16le</code>、<code>:ascii</code> 等类型</td></tr><tr><td><code>invalid hex</code></td><td>核对占位符外的非法字符和不完整字节</td></tr><tr><td>校验不符合协议</td><td>核对算法、覆盖范围、输出字节序和长度偏移，与设备协议已知帧比较</td></tr></tbody></table></div>
+<h2 id="8-字段类型与断言">8. 字段类型与断言</h2>
+<h3 id="81-填写字段表">8.1 填写字段表</h3>
+<p>在命令编辑器文档字段中填写请求 / 响应字段表：<strong>偏移、长度、类型、名称、含义</strong>。偏移从第 0 字节开始；名称供解码和断言引用，应稳定且可区分。</p>
+<div class="table-wrap"><table><thead><tr><th>类型</th><th>说明</th></tr></thead><tbody><tr><td><code>u8</code> / <code>i8</code></td><td>无符号 / 有符号 8 位整数</td></tr><tr><td><code>u16le</code> / <code>u16be</code> / <code>i16le</code> / <code>i16be</code></td><td>16 位整数，小端 / 大端</td></tr><tr><td><code>u24le</code> / <code>u24be</code></td><td>无符号 24 位整数</td></tr><tr><td><code>u32le</code> / <code>u32be</code> / <code>i32le</code> / <code>i32be</code></td><td>32 位整数</td></tr><tr><td><code>f32le</code> / <code>f32be</code></td><td>IEEE 754 单精度浮点数</td></tr><tr><td><code>bool</code> / <code>bitmask</code> / <code>bcd</code></td><td>布尔值（非零为 true）、位掩码、BCD 码</td></tr><tr><td><code>bytes</code></td><td>原始字节，HEX 显示</td></tr><tr><td><code>ascii</code> / <code>utf8</code></td><td>文本，长度写 <code>n</code> 可读到帧尾</td></tr></tbody></table></div>
+<p>类型可选择或手填，<code>uint8</code>、<code>u16 LE</code>、<code>int16BE</code>、<code>float</code>、<code>string</code>、<code>utf-8</code>、<code>hex</code> 等会被规范化。字段类型参与解码、类型化变量编码和断言；缺少字节时日志字段可能显示 <code>∅</code>。</p>
+<h3 id="82-用演示响应添加断言">8.2 用演示响应添加断言</h3>
+<p>设备信息响应 <code>AA 81 03 01 00 10 39</code> 可检查以下字段：</p>
+<div class="table-wrap"><table><thead><tr><th>字段名称</th><th>偏移</th><th>长度</th><th>类型</th><th>本例解码值</th><th>断言示例</th></tr></thead><tbody><tr><td><code>command</code></td><td>1</td><td>1</td><td><code>u8</code></td><td><code>129</code>（<code>0x81</code>）</td><td><code>== 0x81</code></td></tr><tr><td><code>fwMajor</code></td><td>3</td><td>1</td><td><code>u8</code></td><td><code>1</code></td><td><code>&gt;= 1</code></td></tr><tr><td><code>proto</code></td><td>5</td><td>1</td><td><code>u8</code></td><td><code>16</code>（<code>0x10</code>）</td><td><code>== 0x10</code></td></tr></tbody></table></div>
+<p>保存响应字段表后，在「校验期望响应」中添加字段断言。演示时将 <code>fwMajor</code> 改为 <code>&gt;= 2</code> 再执行，会在匹配到响应后得到 FAIL；改回 <code>&gt;= 1</code> 可恢复通过。也可直接配置「偏移 1 的字节等于 <code>81</code>」的偏移断言。</p>
+<h3 id="83-比较规则">8.3 比较规则</h3>
+<p>数值支持 <code>==</code>、<code>!=</code>、<code>&gt;</code>、<code>&gt;=</code>、<code>&lt;</code>、<code>&lt;=</code>、<code>in</code>（如 <code>1,2,3</code>）和 <code>range</code>（如 <code>1..10</code>，包含两端），预期值可写十进制或 <code>0x</code> 十六进制。文本 / 字节支持 <code>==</code>、<code>!=</code>、<code>in</code>。</p>
+<p>失败原因包含实际值或缺失原因。只填字段表不会自动验证各字段，也不会自动校验 CRC，需要验证的条件须配置为断言。</p>
+<h2 id="9-工作台与导出调试包">9. 工作台与导出调试包</h2>
+<figure class="single"><a class="shot" href="./screenshots/13-workspace.png" target="_blank" rel="noopener"><img src="./screenshots/13-workspace.png" alt="工作台总览：设备信息、RSSI 趋势、MTU 协商、服务树、集合入口和导出调试包" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>工作台总览：设备信息、RSSI 趋势、MTU 协商、服务树、集合入口和导出调试包</figcaption></figure>
+<h3 id="91-查看设备与整理接口">9.1 查看设备与整理接口</h3>
+<p>设备卡片提供「前往调试」「历史」「断开」，展开后有 RSSI 趋势、MTU 协商和服务树。MTU 以协商返回的实际值为准，设备或平台可能不接受请求值。</p>
+<p>服务 / 特征值显示 UUID、属性以及匹配到的名称、方向、格式和操作数。点击 ✎ 编辑服务说明或接口文档。集合标签显示当前匹配集合，点击可进入集合与插件、复制 JSON 或解除显式绑定。</p>
+<h3 id="92-导出步骤">9.2 导出步骤</h3>
+<ol>
+<li>在要导出的设备卡片点击「导出调试包」，当前入口以该设备为范围。</li>
+<li>选择用途：AI 分析、Mock 测试、团队复现或归档。</li>
+<li>勾选文档，至少选择一项。用途表达调试目的，实际内容由文档勾选决定。</li>
+<li>选择是否包含原始日志、是否脱敏设备 ID，填写目标或问题描述。</li>
+<li>确认导出。Android / iOS App 尝试生成 ZIP 并唤起系统分享；未唤起时查看保存路径，打包失败时查看文件夹提示。H5 逐个下载文件，需允许浏览器连续下载。</li>
+</ol>
+<p>调试目标示例：「设备信息查询在连续执行时偶发超时；预期每次收到 AA 81 响应，请比较成功与超时前后的收发，检查响应前缀、Notify 和序号是否合理。」</p>
+<h3 id="93-文件与勾选项">9.3 文件与勾选项</h3>
+<div class="table-wrap"><table><thead><tr><th>文件</th><th>何时生成 / 用途</th></tr></thead><tbody><tr><td><code>README.md</code></td><td>包索引，列出实际生成的文件</td></tr><tr><td><code>PROTOCOL.md</code> / <code>protocol.json</code></td><td>勾选接口文档：人读和结构化的服务、特征值、命令、字段说明等</td></tr><tr><td><code>collection.json</code></td><td>勾选接口文档且设备已匹配集合时生成，可导回 App</td></tr><tr><td><code>SESSION_LOG.md</code></td><td>勾选传输记录：会话摘要、心跳统计、端点流量、执行记录；包含原始日志时附时间线</td></tr><tr><td><code>logs.csv</code></td><td>同时勾选传输记录和原始日志时生成</td></tr><tr><td><code>AI_PROMPT.md</code></td><td>勾选 AI 上下文：目标、上下文与输出要求</td></tr><tr><td><code>mock.json</code></td><td>勾选 Mock 数据：种子、变量、样例和可生成的规则</td></tr></tbody></table></div>
+<p>需要可导回的文件时，先确认集合存在并勾选接口文档。取消原始日志不会自动去掉样例、命令载荷或变量；「脱敏设备 ID」不会识别业务载荷中的口令和标识，分享前可按实际内容检查文件。</p>
+<h3 id="94-ai-补全后导回">9.4 AI 补全后导回</h3>
+<p>把调试包和目标交给 AI，请其在原 <code>collection.json</code> 结构内补全名称、命令、字段表、变量和样例，并保留原有标识。回传后，在「集合与插件」导入并检查预览。</p>
+<p>首次验证可新建集合；回写现有集合时选择合并目标及策略。「保留本地」用于补缺，不替换已有非空内容；确实要更新旧值时才选择覆盖。检查端点、载荷和断言，先用 Mock 或已知查询验证。</p>
+<h2 id="10-协议集合">10. 协议集合</h2>
+<figure class="single"><a class="shot" href="./screenshots/15-collections.png" target="_blank" rel="noopener"><img src="./screenshots/15-collections.png" alt="集合管理总览：当前设备、匹配集合、导入与新建入口、自建及内置集合卡片" width="540" height="1200" loading="lazy" decoding="async"></a><figcaption>集合管理总览：当前设备、匹配集合、导入与新建入口、自建及内置集合卡片</figcaption></figure>
+<h3 id="101-匹配与绑定">10.1 匹配与绑定</h3>
+<p>集合保存接口注释、命令、变量、样例和拓扑快照，与单台设备的连接实例分离，供同型号设备共享协议。</p>
+<ul>
+<li><strong>指纹匹配</strong>：集合记录的服务 UUID 必须全部包含在设备服务中，更具体的服务指纹得分更高；可附加设备名子串或 <code>/正则/</code> 规则。</li>
+<li><strong>显式绑定</strong>：优先于自动匹配，同一设备只能显式绑定一个集合。</li>
+<li><strong>自动创建</strong>：首次保存注释或命令时，没有可编辑集合则创建并绑定。</li>
+<li><strong>拓扑快照</strong>：已发现的服务、特征值及属性，供导出和 Mock 使用。</li>
+</ul>
+<p>解除显式绑定后仍会按指纹匹配，因此标签可能继续显示同一集合。需要其他协议时，直接把正确集合绑定到当前设备。</p>
+<h3 id="102-管理集合与详情">10.2 管理集合与详情</h3>
+<p>从工作台集合入口进入「集合与插件」。卡片显示来源（自建 / 导入 / 内置）、匹配 / 已绑定标记、数量统计、指纹和名称规则。</p>
+<p>点击卡片进入详情；「⋯」或长按提供复制 JSON、分享 JSON、编辑信息、绑定 / 解绑、作为 Mock 设备连接、复制和删除等操作。内置集合只读，编辑前先复制为可编辑集合。</p>
+<p>详情页可查看指纹、已绑定设备和拓扑；变量编辑后保存；命令点击进入编辑器，删除按钮移除命令；样例菜单可重命名、编辑备注和删除。修改的是共享集合内容，匹配该集合的其他设备也会使用更新后的定义。</p>
+<h3 id="103-导入-json-或-zip">10.3 导入 JSON 或 ZIP</h3>
+<ol>
+<li>点击「导入」，粘贴 JSON、读取剪贴板，或选择文件。</li>
+<li>选择 <code>.json</code> 或 Debug Pack <code>.zip</code>；ZIP 按优先级寻找 <code>collection.json</code>、<code>protocol.json</code>、<code>debug-pack.json</code>。</li>
+<li>查看预览，核对名称、服务、命令和样例数量。</li>
+<li>选择新建或合并到已有可编辑集合，合并策略为「保留本地（只补空缺）」或「以导入内容覆盖」。</li>
+<li>需要马上使用时勾选绑定当前设备，确认后到集合详情检查。</li>
+</ol>
+<p>支持原生集合、<code>protocol.json</code>（0.1 / 0.2 / 0.3 格式）、Debug Pack JSON 和旧版注释。文件须为完整 JSON，粘贴 AI 输出时去掉外围说明和 Markdown 代码围栏。独立 <code>mock.json</code> 不是这里的集合导入入口。</p>
+<p>Android 和 H5 可选择文件，iOS 使用粘贴 / 剪贴板。ZIP 无法读取时先解压，再导入其中的 <code>collection.json</code>。</p>
+<h3 id="104-换手机或分享">10.4 换手机或分享</h3>
+<p>分享集合 JSON 或含它的调试包，对方导入后按指纹匹配或手动绑定。导出集合默认移除显式设备绑定，设备覆盖变量仅保存在本机，对方需重新填写设备专属参数。</p>
+<p>集合携带协议资产，不会通过导入恢复本机完整传输历史；追查原调试过程时同时查看会话记录。</p>
+<h3 id="105-自定义解析插件">10.5 自定义解析插件</h3>
+<p>页面下半部分管理 JS 解析插件。新建插件，填写名称和代码并保存，再启用；同一时间只启用一个。回到控制台「协议解析」，切换自定义模式查看最近一条 RX 的结果。</p>
+<p>插件接收 <code>hexStr</code> 和 <code>asciiStr</code>，代码应返回包含 <code>fields</code> 数组的对象。最小示例：</p>
+<pre><code class="lang-javascript">return {
+  fields: [
+    { name: 'HEX', value: hexStr },
+    { name: '文本', value: asciiStr }
+  ]
+};</code></pre>
+<p>没有字段或显示 Error 时检查返回结构和代码。插件影响自定义解析展示，字段断言仍使用命令响应字段表；分享集合后，解析插件需另行配置。</p>
+<h2 id="11-mock-模式">11. Mock 模式</h2>
+<h3 id="111-内置演示设备">11.1 内置演示设备</h3>
+<p>扫描页演示入口或设置中的「演示 / Mock 模式」开关可启用虚拟设备。蓝牙不可用且已开启 Mock 时可退回虚拟扫描；有真实蓝牙时列表可能同时出现真实设备，通过 MOCK 标记区分。</p>
+<p><strong>BLE Demo Device</strong> 提供 Generic Command、Device Information 和 Battery 服务：</p>
+<div class="table-wrap"><table><thead><tr><th>操作 / 订阅</th><th>演示行为</th></tr></thead><tbody><tr><td>向 FFE1 写入以 <code>AA 01</code> 开头的请求</td><td>FFE2 约 120 ms 后返回 <code>AA 81 03 01 00 10 39</code></td></tr><tr><td>向 FFE1 写入以 <code>AA 02</code> 开头的请求</td><td>FFE2 约 80 ms 后返回 <code>AA 82 01 00 2D</code></td></tr><tr><td>向 FFE1 写入以 <code>AA 03</code> 开头的请求</td><td>FFE2 约 300 ms 后返回重启应答 <code>AA 83 00 2D</code></td></tr><tr><td>其他以 <code>AA</code> 开头的请求</td><td>返回 NACK <code>AA FF 01 EE 98</code></td></tr><tr><td>订阅 FFE2</td><td>每 5 秒发送状态事件帧</td></tr><tr><td>读取 Device Information</td><td>可读制造商和固件文本，如 <code>ACME</code>、<code>1.0.0</code></td></tr><tr><td>订阅 Battery</td><td>每 10 秒更新电量，演示递减效果</td></tr></tbody></table></div>
+<h3 id="112-从集合生成-mock">11.2 从集合生成 Mock</h3>
+<p>集合需要可用的服务 / 特征值拓扑，以及至少一种应答规则、可读值或周期事件。只有名称和服务指纹的空集合不能生成可用 Mock。</p>
+<ol>
+<li>连接设备后发现相关特征值，保存命令或注释，使集合记录拓扑。</li>
+<li>写命令填入载荷与响应样例，或保存配对样例；READ 命令填写响应样例。</li>
+<li>在集合菜单选择「作为 Mock 设备连接」，或开启 Mock 后扫描 <code>&lt;集合名&gt; (Mock)</code>。</li>
+<li>执行并核对 RX；修改规则后重新连接 Mock，让新规则生效。</li>
+</ol>
+<p>写命令使用请求前缀匹配；模板载荷先用集合变量渲染，再取前两个字节作为前缀。配对样例提供请求、响应和延时；READ 的响应样例生成可读值；<code>request: NONE</code> 且 Mock 说明含 <code>every 5s</code> 等周期描述时可生成通知。</p>
+<p>未订阅时 Mock 应答更新对应可读值，支持 READ 的端点可主动读取。未命中规则的写入不一定产生响应。</p>
+<h3 id="113-使用范围">11.3 使用范围</h3>
+<p>Mock 适合验证操作流程、模板、字段解码、断言和导入导出。它按预设规则应答，不等价于完整固件；两个模板命令前两字节相同时可能命中同一规则。无线信号、真实连接稳定性、认证和设备校验仍需真机验证。</p>
+<h2 id="12-心跳测试与传输历史">12. 心跳测试与传输历史</h2>
+<h3 id="121-配置并运行心跳">12.1 配置并运行心跳</h3>
+<p>控制台顶部 <strong>♥</strong> 打开心跳面板，持续发送有效业务载荷，观察应答、丢失和 RTT。</p>
+<ol>
+<li>选择写入服务 / 特征值、HEX / ASCII 内容和写入方式。使用实际字节或文本，当前心跳路径不展开第 7 节的模板占位符。</li>
+<li>设置间隔，初始默认 5000 ms。校验应答时指定响应特征值、前缀和超时，初始超时为 2000 ms。</li>
+<li>启动后观察发送、应答、丢失、丢失率和 RTT 最小 / 平均 / 最大值与趋势。</li>
+<li>连续未应答时检查日志中的超时或写入错误。完成后在面板停止，断连也会停止测试。</li>
+</ol>
+<p>演示配置：<code>FFE0 / FFE1</code>、HEX <code>AA 01 00 AB</code>、响应 <code>FFE2</code>、前缀 <code>AA 81</code>、间隔 <code>5000</code> ms、超时 <code>2000</code> ms。留空端点 / 前缀会放宽匹配，周期通知可能被计入应答。</p>
+<p>超时应小于间隔，当前有效等待时间不会超过间隔。丢失率按已判定的「应答 + 丢失」计算，等待中的请求不计入分母。不校验应答时不能用 0% 丢失率证明业务正常。为便于归因，先单独跑心跳，再调试其他命令。</p>
+<h3 id="122-查看传输历史">12.2 查看传输历史</h3>
+<p>每次连接自动录制会话，记录收发、RSSI 范围、MTU、断开原因和心跳统计。工作台设备卡或扫描页最近连接旁的历史入口可打开记录。</p>
+<p>按设备选择会话，查看摘要和时间线，可按方向过滤、翻页、导出单会话 <code>SESSION_LOG.md</code>，删除会话或清除某设备历史。手机逐级进入，宽屏采用列表与详情双栏。</p>
+<h3 id="123-保存范围">12.3 保存范围</h3>
+<div class="table-wrap"><table><thead><tr><th>本地记录</th><th>当前上限</th></tr></thead><tbody><tr><td>跟踪设备</td><td>12 台</td></tr><tr><td>每台设备的会话</td><td>最近 8 次</td></tr><tr><td>每个会话的日志</td><td>最近 800 条</td></tr><tr><td>每台设备每条命令的执行记录</td><td>最近 10 次</td></tr></tbody></table></div>
+<p>超过上限会裁剪旧记录，会话统计可能多于可见时间线。调试包使用当前可用记录，历史页导出使用该会话保留记录；长期结果应及时导出，清除 App 数据或卸载前保存所需集合和记录。</p>
+<h2 id="13-设置">13. 设置</h2>
+<p>扫描页 / 工作台的齿轮及控制台更多菜单可打开设置。</p>
+<div class="table-wrap"><table><thead><tr><th>设置</th><th>作用</th></tr></thead><tbody><tr><td>主题</td><td>暗色 / 亮色，即时切换</td></tr><tr><td>语言</td><td>中文 / English，即时生效</td></tr><tr><td>演示 / Mock 模式</td><td>控制虚拟设备功能；关闭后若仍有 Mock 会话，可手动断开并重新扫描</td></tr><tr><td>关于</td><td>当前版本，来自运行时应用信息 / 项目 manifest</td></tr></tbody></table></div>
+<p>本文采用暗色 Android 截图，亮色、英文和宽屏下布局或文字会变化，主要路径相同。</p>
+<h2 id="14-常见问题">14. 常见问题</h2>
+<h3 id="141-扫描不到或连接失败">14.1 扫描不到或连接失败</h3>
+<div class="table-wrap"><table><thead><tr><th>现象</th><th>依次检查</th></tr></thead><tbody><tr><td>扫描结果为空</td><td>蓝牙与权限 → 名称 / RSSI 过滤 → 外设广播状态 → 是否被其他客户端占用</td></tr><tr><td>只能看到 Mock</td><td>是否为 H5 / 虚拟扫描回退 → 真实蓝牙与权限 → 返回扫描页重试</td></tr><tr><td>最近连接无法重连</td><td>设备标识是否变化 → 重新扫描 → 是否允许新连接</td></tr><tr><td>PIN 写入后无效</td><td>HEX / 文本编码 → 目标端点 → 是否需要其他认证或系统配对</td></tr></tbody></table></div>
+<p>App 面向 BLE，传统蓝牙串口设备不能直接按 BLE 服务 / 特征值流程连接。</p>
+<h3 id="142-能连接但不能发送或收不到数据">14.2 能连接，但不能发送或收不到数据</h3>
+<div class="table-wrap"><table><thead><tr><th>现象</th><th>依次检查</th></tr></thead><tbody><tr><td>发送按钮不可用</td><td>可写特征值是否选中 → 内容是否为空 → 模板预览报错</td></tr><tr><td>有 TX、没有 RX</td><td>响应端点与订阅 → 设备认证 → 请求格式 → 是否应使用 READ</td></tr><tr><td>有 RX 仍超时</td><td>响应特征值 / 前缀是否匹配 → 是否只有事件帧 → 超时是否足够</td></tr><tr><td>只显示「已发送」</td><td>开启期望响应，底层写入确认不能替代业务判定</td></tr><tr><td>PASS 但字段不对</td><td>前缀是否过宽 → 有无断言 → 偏移、长度、类型和字节序</td></tr><tr><td>提示设备忙</td><td>等待前一命令完成或超时，再执行下一条</td></tr></tbody></table></div>
+<h3 id="143-集合导入与导出">14.3 集合、导入与导出</h3>
+<div class="table-wrap"><table><thead><tr><th>现象</th><th>处理方法</th></tr></thead><tbody><tr><td>同型号第二台设备没有命令</td><td>检查指纹、名称规则、服务发现，必要时绑定正确集合</td></tr><tr><td>解绑后仍显示原集合</td><td>解绑后仍可能指纹匹配，可绑定其他正确集合</td></tr><tr><td>导入后旧值没变化</td><td>保留本地只补空缺，确需更新时核对目标后覆盖或手动编辑</td></tr><tr><td>ZIP 无法解压</td><td>解压后导入 <code>collection.json</code>，或复制其中 JSON 文本</td></tr><tr><td>iOS 无「选择文件」</td><td>当前未接入，使用粘贴 / 剪贴板</td></tr><tr><td>缺少 <code>collection.json</code></td><td>勾选接口文档并确认设备匹配集合，可先保存命令或注释</td></tr><tr><td>H5 没有 ZIP</td><td>逐个下载文件，检查浏览器连续下载拦截</td></tr><tr><td>集合无法作为 Mock 连接</td><td>检查特征值拓扑以及应答样例、可读值或周期规则</td></tr><tr><td>导入后变量值不同</td><td>本机设备覆盖优先，检查当前设备的变量面板</td></tr></tbody></table></div>
+<h3 id="144-布局与平台边界">14.4 布局与平台边界</h3>
+<p>手机日志区和编辑弹窗有各自的滚动区域，长内容应在对应面板内滚动；操作被键盘遮挡时先收起键盘。宽屏或横屏可获得更大的并排阅读空间。</p>
+<p>当前 App 使用的 uni-app BLE 接口未提供 Descriptor 访问和完整的系统配对状态展示，不应据此推断设备不支持这些能力。长时间测试记录受保存上限约束，Mock 结果也不能替代真实设备稳定性验证。</p>
+</main>
+</div>
+</body>
+</html>
